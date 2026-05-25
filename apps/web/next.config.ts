@@ -15,6 +15,12 @@ const nextConfig: NextConfig = {
     ];
   },
   transpilePackages: ['@pluck/shared'],
+  // Avoid spawning a worker-per-page during static generation. On some
+  // Windows + Node 24 combos the worker spawn fails ("spawn UNKNOWN") — a
+  // single-process build sidesteps that without changing what gets shipped.
+  experimental: {
+    cpus: 1,
+  },
 };
 
 export default nextConfig;

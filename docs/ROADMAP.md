@@ -13,61 +13,65 @@ Phased build plan, re-sequenced 2026-05-25 for the zero-cost-to-founder model (s
 - [x] `packages/shared` — type definitions for API contracts
 - [x] End-to-end mock flow: picker → POST `/api/infer` (mocked) → results in overlay
 
-## Phase 1 — Client-side AI inference (weeks 2–3)
+## Phase 1 — Client-side AI inference ✅
 
 **Goal:** AI calls move from a server we'd pay for into the extension itself, using either Chrome built-in AI (free) or the user's own API key.
 
-- [ ] `lib/ai/types.ts` — `AIProvider` interface
-- [ ] `lib/ai/prompt.ts` — prompt template + page-HTML sanitization tuned for token budget
-- [ ] `lib/ai/providers/chrome-builtin.ts` — Gemini Nano via `window.ai`, with availability detection
-- [ ] `lib/ai/providers/anthropic.ts` — direct call to `api.anthropic.com` with user's BYOK key + prompt caching
-- [ ] `lib/ai/providers/gemini.ts` — Google AI Studio API with user's BYOK key
-- [ ] `lib/settings.ts` — typed `chrome.storage.local` wrapper for provider choice + API keys
-- [ ] `entrypoints/options/` — settings page: pick provider, paste keys, test connection
-- [ ] Background routes inference through chosen provider (no more server fetch)
-- [ ] Repurpose `apps/web` `/api/infer` as marketing-demo mock (rate-limited)
-- [ ] Selector-validation in extension (highlight matches before user confirms)
-- [ ] "Refine pick" loop (add/remove examples, re-infer)
+- [x] `lib/ai/types.ts` — `AIProvider` interface
+- [x] `lib/ai/prompt.ts` — prompt template + page-HTML sanitization tuned for token budget
+- [x] `lib/ai/providers/chrome-builtin.ts` — Gemini Nano via `window.ai`, with availability detection
+- [x] `lib/ai/providers/anthropic.ts` — direct call to `api.anthropic.com` with user's BYOK key + prompt caching
+- [x] `lib/ai/providers/gemini.ts` — Google AI Studio API with user's BYOK key
+- [x] `lib/settings.ts` — typed `chrome.storage.local` wrapper for provider choice + API keys
+- [x] `entrypoints/options/` — settings page: pick provider, paste keys, test connection
+- [x] Background routes inference through chosen provider (no more server fetch)
+- [x] Repurpose `apps/web` `/api/infer` as marketing-demo mock (rate-limited)
+- [x] Selector-validation in extension (highlight matches before user confirms)
+- [x] "Refine pick" loop (add/remove examples, re-infer)
+- [ ] OpenAI provider — deferred; current three cover the architecture
 
-**Exit criteria:** on 5 real-world sites, the AI proposes a usable schema on the first or second iteration. Founder pays $0 in API costs because every call uses either the user's machine (Chrome built-in) or the user's key.
-
-## Phase 2 — Save and re-run jobs (weeks 4–5)
+## Phase 2 — Save and re-run jobs ✅
 
 **Goal:** jobs persist in browser storage; user can re-run on demand.
 
-- [ ] `lib/storage.ts` — `chrome.storage.local` wrapper for `SavedJob` and `RunRecord`
-- [ ] `entrypoints/popup/` — jobs list, "New scrape", recent runs
-- [ ] "Save as job" flow from the picker overlay
-- [ ] "Re-run" flow — opens target URL in a background tab, executes saved schema, captures rows
-- [ ] Pagination: next-link follower + "load more" clicker
-- [ ] Per-job storage cap enforcement (last 50 runs, rolling)
-- [ ] CSV download from the popup
+- [x] `lib/storage.ts` — `chrome.storage.local` wrapper for `SavedJob` and `RunRecord`
+- [x] `entrypoints/popup/` — jobs list, "New scrape", recent runs
+- [x] "Save as job" flow from the picker overlay
+- [x] "Re-run" flow — opens target URL in a background tab, executes saved schema, captures rows
+- [x] Pagination: next-link follower (page-numbers handled too)
+- [ ] "Load more" infinite-scroll clicker — deferred; most sites we test use next-link
+- [x] Per-job storage cap enforcement (last 20 runs per job, last 1000 globally, rows kept only on most-recent succeeded)
+- [x] CSV download from the popup
 
-**Exit criteria:** a user creates a job today, comes back tomorrow, hits "run", and gets a fresh CSV. All without leaving the browser. Still $0 founder cost.
-
-## Phase 3 — Pro tier + monetization (weeks 6–8)
+## Phase 3 — Pro tier + monetization ✅ (code-complete; awaits Polar account setup)
 
 **Goal:** Pro features behind a $29 one-time license sold via Polar.sh. Free tier remains fully functional.
 
-- [ ] Free-tier gating: max 3 saved jobs, manual runs only, CSV export only
-- [ ] `chrome.alarms`-based scheduled runs (Pro feature)
-- [ ] Google Sheets export (OAuth, append-on-run) — Pro feature
-- [ ] Webhook delivery with HMAC signing — Pro feature
-- [ ] Polar.sh checkout integration (link from popup → Polar hosted page)
-- [ ] `apps/web` `/api/polar/webhook` — receive purchase, sign JWT, email license to buyer
-- [ ] `apps/web` `/api/license/verify` — stateless JWT verification (Vercel free function)
-- [ ] `lib/license.ts` — offline JWT validation; unlock Pro features
-- [ ] License entry UI in settings page
-- [ ] Pricing page on the landing site
+- [x] Free-tier gating: max 3 saved jobs, manual runs only, CSV export only
+- [x] `chrome.alarms`-based scheduled runs (Pro feature, surfaced in popup edit form)
+- [ ] Google Sheets export — deferred (needs OAuth verification flow with Google; ~1 week of work). Webhook covers the use case for most users.
+- [x] Webhook delivery with HMAC-SHA256 signing — Pro feature, configured per-job in the popup edit form
+- [ ] Polar.sh checkout link — landing page links to `https://buy.polar.sh/pluck-pro` (placeholder URL until product is created in Polar)
+- [x] `apps/web` `/api/polar/webhook` — Standard Webhooks signature verification, mints JWT, hands off to email
+- [x] `apps/web` `/api/license/verify` — stateless JWT verification
+- [x] `lib/license.ts` — offline JWT validation; unlocks Pro features
+- [x] License entry UI in options page
+- [x] Pricing page on the landing site
+- [x] Resend integration for license-delivery email (gated on `RESEND_API_KEY`)
 
-**Exit criteria:** end-to-end flow works — user installs free extension, hits the 3-job cap, clicks "Upgrade", pays $29 on Polar, receives JWT by email, pastes into extension, Pro features unlock. $0 monthly cost still; Polar takes its cut per sale.
-
-## Phase 4 — Launch (week 9–10)
+## Phase 4 — Launch (next)
 
 **Goal:** first 100 paying customers.
 
-- [ ] Polish landing page (hero, demo video, pricing, FAQ, link to Chrome Web Store)
-- [ ] Chrome Web Store submission (1–2 weeks review; submit early)
+All product work is done. This phase is **operations** — accounts, accounts, content.
+
+- [x] Polish landing page (hero, pricing, FAQ — demo video TBD)
+- [ ] Create Polar.sh account + product, swap `https://buy.polar.sh/pluck-pro` link with the real one
+- [ ] Add `POLAR_WEBHOOK_SECRET` + `LICENSE_PRIVATE_KEY` + `RESEND_API_KEY` to Vercel project secrets
+- [ ] Run `pnpm gen-license-keys` to replace placeholder; rebuild extension; commit
+- [ ] Verify domain in Resend; set `RESEND_FROM` to `licenses@pluck.app` (or whatever domain we register)
+- [ ] Register `pluck.app` (or accept `vercel.app` subdomain — $0 path)
+- [ ] Chrome Web Store submission ($5 dev fee, 1–2 weeks review; submit early)
 - [ ] Product Hunt launch
 - [ ] X / LinkedIn / Indie Hackers launch post
 - [ ] Outreach: 50 cold emails to recruiters, e-commerce operators

@@ -9,12 +9,16 @@ import type { ProviderId } from '@/lib/ai/types';
 import {
   listJobs,
   deleteJob,
+  saveJob,
   FREE_TIER_MAX_JOBS,
   type SavedJob,
+  type WebhookConfig,
 } from '@/lib/storage';
 import { verifyLicense } from '@/lib/license';
 import { downloadCsv, rowsToCsv, slugify } from '@/lib/export';
 import { getRun } from '@/lib/storage';
+import { scheduleJob, unscheduleJob } from '@/lib/scheduling';
+import { generateWebhookSecret } from '@/lib/integrations/webhook';
 
 const PROVIDER_LABELS: Record<ProviderId, string> = {
   'chrome-builtin': 'Chrome built-in AI',
@@ -23,6 +27,15 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
   openai: 'OpenAI',
 };
 
+const SCHEDULE_OPTIONS: Array<{ label: string; minutes: number | null }> = [
+  { label: 'Off', minutes: null },
+  { label: 'Every 5m', minutes: 5 },
+  { label: 'Every 15m', minutes: 15 },
+  { label: 'Every 1h', minutes: 60 },
+  { label: 'Every 6h', minutes: 360 },
+  { label: 'Every 24h', minutes: 1440 },
+];
+
 export function App() {
   const [tabUrl, setTabUrl] = useState<string>('');
   const [provider, setProvider] = useState<ProviderId | null>(null);
@@ -30,6 +43,7 @@ export function App() {
   const [isPro, setIsPro] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [runningJobs, setRunningJobs] = useState<Set<string>>(new Set());
+  const [editingJobId, setEditingJobId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const [s, lic, js] = await Promise.all([getSettings(), getLicense(), listJobs()]);
@@ -79,9 +93,7 @@ export function App() {
     const msg: PopupToBgMessage = { type: 'run-job', jobId };
     try {
       const reply: BgRunJobReply = await chrome.runtime.sendMessage(msg);
-      if (!reply.ok) {
-        setError(`Run failed: ${reply.error}`);
-      }
+      if (!reply.ok) setError(`Run failed: ${reply.error}`);
     } catch (err) {
       setError(`Run failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -105,11 +117,15 @@ export function App() {
       return;
     }
     const csv = rowsToCsv(run.rows);
-    downloadCsv(`${slugify(job.name)}-${new Date(run.startedAt).toISOString().slice(0, 10)}.csv`, csv);
+    downloadCsv(
+      `${slugify(job.name)}-${new Date(run.startedAt).toISOString().slice(0, 10)}.csv`,
+      csv,
+    );
   }
 
   async function deleteJobById(jobId: string) {
     if (!confirm('Delete this job and its run history? This cannot be undone.')) return;
+    await unscheduleJob(jobId).catch(() => {});
     await deleteJob(jobId);
     refresh();
   }
@@ -177,7 +193,14 @@ export function App() {
                     <div className="job-host">
                       {hostnameOrUrl(job.url)}
                       {job.schedule && (
-                        <span className="schedule-tag">every {job.schedule.periodMinutes}m</span>
+                        <span className="schedule-tag">
+                          every {humanPeriod(job.schedule.periodMinutes)}
+                        </span>
+                      )}
+                      {job.integrations?.webhook?.enabled && (
+                        <span className="schedule-tag" title="Webhook configured">
+                          ⚡ webhook
+                        </span>
                       )}
                     </div>
                     {job.lastRun ? (
@@ -207,11 +230,29 @@ export function App() {
                     >
                       ⬇
                     </button>
+                    <button
+                      onClick={() => setEditingJobId(editingJobId === job.id ? null : job.id)}
+                      title="Edit job"
+                    >
+                      ✎
+                    </button>
                     <button onClick={() => deleteJobById(job.id)} title="Delete">
                       ✕
                     </button>
                   </div>
                 </div>
+                {editingJobId === job.id && (
+                  <JobEditForm
+                    job={job}
+                    isPro={isPro}
+                    onClose={() => setEditingJobId(null)}
+                    onSaved={async () => {
+                      setEditingJobId(null);
+                      await refresh();
+                    }}
+                    onError={(msg) => setError(msg)}
+                  />
+                )}
               </li>
             ))}
           </ul>
@@ -234,6 +275,166 @@ export function App() {
   );
 }
 
+function JobEditForm({
+  job,
+  isPro,
+  onClose,
+  onSaved,
+  onError,
+}: {
+  job: SavedJob;
+  isPro: boolean;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+  onError: (msg: string) => void;
+}) {
+  const [name, setName] = useState(job.name);
+  const [scheduleMinutes, setScheduleMinutes] = useState<number | null>(
+    job.schedule?.periodMinutes ?? null,
+  );
+  const [webhook, setWebhook] = useState<WebhookConfig>(
+    job.integrations?.webhook ?? { enabled: false, url: '', secret: '' },
+  );
+  const [showSecret, setShowSecret] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  function ensureSecret() {
+    if (!webhook.secret) {
+      setWebhook({ ...webhook, secret: generateWebhookSecret() });
+    }
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const updated: SavedJob = {
+        ...job,
+        name: name.trim() || job.name,
+        schedule:
+          scheduleMinutes != null
+            ? {
+                periodMinutes: scheduleMinutes,
+                nextRunAt: Date.now() + scheduleMinutes * 60_000,
+              }
+            : undefined,
+        integrations: webhook.enabled || webhook.url
+          ? { webhook }
+          : undefined,
+      };
+
+      await saveJob(updated);
+
+      // Sync the alarm.
+      if (scheduleMinutes != null) {
+        await scheduleJob(job.id, scheduleMinutes);
+      } else {
+        await unscheduleJob(job.id);
+      }
+
+      await onSaved();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="edit-form">
+      <label className="field">
+        <span>Name</span>
+        <input value={name} onChange={(e) => setName(e.target.value)} />
+      </label>
+
+      <label className="field">
+        <span>
+          Schedule
+          {!isPro && <span className="pro-tag"> · Pro</span>}
+        </span>
+        <select
+          value={scheduleMinutes ?? ''}
+          onChange={(e) => setScheduleMinutes(e.target.value === '' ? null : Number(e.target.value))}
+          disabled={!isPro}
+        >
+          {SCHEDULE_OPTIONS.map((o) => (
+            <option key={o.label} value={o.minutes ?? ''}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <fieldset className="field">
+        <legend>
+          Webhook{!isPro && <span className="pro-tag"> · Pro</span>}
+        </legend>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={webhook.enabled}
+            disabled={!isPro}
+            onChange={(e) => {
+              const enabled = e.target.checked;
+              ensureSecret();
+              setWebhook((w) => ({
+                ...w,
+                enabled,
+                secret: w.secret || generateWebhookSecret(),
+              }));
+            }}
+          />
+          <span>Send rows to URL after each run</span>
+        </label>
+        {webhook.enabled && (
+          <>
+            <input
+              type="url"
+              placeholder="https://your-server.com/webhook"
+              value={webhook.url}
+              onChange={(e) => setWebhook((w) => ({ ...w, url: e.target.value }))}
+              disabled={!isPro}
+            />
+            <div className="secret-row">
+              <span className="muted">HMAC secret:</span>
+              <code className="secret">
+                {showSecret ? webhook.secret : '•'.repeat(Math.min(webhook.secret.length, 24))}
+              </code>
+              <button
+                type="button"
+                onClick={() => setShowSecret((v) => !v)}
+                className="ghost-btn"
+              >
+                {showSecret ? 'Hide' : 'Show'}
+              </button>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard.writeText(webhook.secret)}
+                className="ghost-btn"
+                disabled={!webhook.secret}
+              >
+                Copy
+              </button>
+            </div>
+            <p className="hint">
+              Your server should HMAC-SHA256 the request body using this secret and compare to the
+              <code> x-pluck-signature</code> header.
+            </p>
+          </>
+        )}
+      </fieldset>
+
+      <div className="edit-actions">
+        <button onClick={onClose} disabled={saving}>
+          Cancel
+        </button>
+        <button className="primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function hostnameOrUrl(url: string): string {
   try {
     return new URL(url).hostname;
@@ -248,4 +449,10 @@ function timeAgo(ts: number): string {
   if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3600_000)}h ago`;
   return `${Math.floor(diff / 86_400_000)}d ago`;
+}
+
+function humanPeriod(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1440) return `${Math.round(minutes / 60)}h`;
+  return `${Math.round(minutes / 1440)}d`;
 }

@@ -16,12 +16,14 @@ The existing web-scraping market (Octoparse, ParseHub, Apify, Bright Data) was b
 
 ## Status
 
-🚧 **Pre-alpha, but end-to-end functional.** Pluck builds clean, all tests pass, and the full flow works locally: pick → infer → validate → save → re-run → export. The Chrome Web Store listing and the Polar.sh payment flow are next.
+🚧 **Feature-complete MVP.** All product code is done: picker, multi-page scraping, three AI providers, scheduled runs, webhook delivery with HMAC, Pro license verification offline + server-side license issuance via Polar webhook + Resend email. Both apps build, **56 unit tests pass**. What's left is operations: register Polar product, generate real license keypair, submit to Chrome Web Store, launch.
 
 - 📖 [`docs/VISION.md`](docs/VISION.md) — pitch, target user, business model
 - 🏗️ [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system design, zero-cost rationale
-- 🗺️ [`docs/ROADMAP.md`](docs/ROADMAP.md) — phased build plan
+- 🗺️ [`docs/ROADMAP.md`](docs/ROADMAP.md) — phased build plan + status
 - 🧪 [`docs/TESTING.md`](docs/TESTING.md) — step-by-step manual test plan
+- 🚀 [`docs/LAUNCH.md`](docs/LAUNCH.md) — pre-launch checklist (Polar, keys, Chrome Web Store, etc.)
+- 📋 [`CHANGELOG.md`](CHANGELOG.md) — versioned change log
 
 ## Repository layout
 

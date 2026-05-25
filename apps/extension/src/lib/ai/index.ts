@@ -13,6 +13,7 @@ import { getSettings } from '../settings';
 import type { AIProvider, AISettings, ProviderId } from './types';
 import { ChromeBuiltinProvider } from './providers/chrome-builtin';
 import { createAnthropicProvider } from './providers/anthropic';
+import { createGeminiProvider } from './providers/gemini';
 
 /** Fallback order when the chosen provider isn't available. */
 const PRIORITY: ProviderId[] = ['chrome-builtin', 'anthropic', 'gemini', 'openai'];
@@ -24,8 +25,9 @@ function getProvider(id: ProviderId, settings: AISettings): AIProvider | null {
     case 'anthropic':
       return createAnthropicProvider(() => settings);
     case 'gemini':
+      return createGeminiProvider(() => settings);
     case 'openai':
-      // TODO: implement in Phase 1
+      // TODO: implement when the architecture story needs a fourth provider.
       return null;
   }
 }
@@ -44,8 +46,6 @@ export async function runInference(req: InferRequest): Promise<{
       return { response: await chosenProv.infer(req), providerUsed: chosen };
     }
 
-    // Chosen provider isn't available — fall back, but remember the original reason
-    // so we can surface it if every fallback also fails.
     const failures: string[] = [`${chosen}: ${chosenAvail.reason}`];
 
     for (const id of PRIORITY) {
@@ -65,5 +65,5 @@ export async function runInference(req: InferRequest): Promise<{
   throw new Error(`Provider "${chosen}" is not implemented yet.`);
 }
 
-export { ChromeBuiltinProvider, createAnthropicProvider };
+export { ChromeBuiltinProvider, createAnthropicProvider, createGeminiProvider };
 export type { AIProvider, ProviderId, AISettings } from './types';

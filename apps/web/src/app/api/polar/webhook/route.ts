@@ -1,54 +1,71 @@
 import { NextResponse } from 'next/server';
 import { signLicense, type LicensePayload } from '@/lib/license-keys';
+import { readWebhookHeaders, verifyStandardWebhook } from '@/lib/webhook-verify';
+import { sendEmail, licenseDeliveryEmail } from '@/lib/email';
 
 export const runtime = 'nodejs';
 
 /**
  * POST /api/polar/webhook
  *
- * Receives purchase-completed events from Polar.sh. Verifies the webhook
- * signature, signs a Pluck Pro license JWT for the buyer, and emails it to
- * them.
+ * Flow:
+ *   1. Verify the Standard Webhooks signature (Polar's signing scheme).
+ *   2. If the event is order.created (or checkout.created with paid status),
+ *      mint an ES256-signed Pluck Pro license JWT for the buyer's email.
+ *   3. Email the license via Resend.
+ *   4. Return 200 so Polar doesn't retry.
  *
- * Status: stub. The signing logic is real; the Polar webhook signature
- * verification and email delivery are placeholders to be wired up when Polar
- * integration goes live (Phase 3 of the roadmap).
+ * Env vars:
+ *   POLAR_WEBHOOK_SECRET  required — endpoint refuses requests without it
+ *   LICENSE_PRIVATE_KEY   required — JWK for ES256 signing
+ *   RESEND_API_KEY        optional — without it, email step is skipped (still 200)
  *
- * Polar webhook payload shape (current as of 2026-05):
- *   {
- *     "type": "order.created",
- *     "data": {
- *       "id": "order_xxx",
- *       "customer": { "email": "buyer@example.com", "name": "..." },
- *       "product": { "id": "prod_pluck_pro_lifetime" },
- *       "amount": 2900,
- *       "currency": "USD"
- *     }
- *   }
+ * Until Polar is wired up live, this endpoint refuses every request with
+ * 503 (POLAR_WEBHOOK_SECRET unset). That's deliberate — we don't want
+ * anyone POSTing here to mint free licenses.
  */
 export async function POST(req: Request) {
-  // TODO: verify the `polar-webhook-signature` header against POLAR_WEBHOOK_SECRET.
-  // Without verification, this endpoint must be left disabled in production —
-  // we don't want to issue free licenses to whoever can POST here.
-  if (process.env.POLAR_WEBHOOK_SECRET == null) {
+  const secret = process.env.POLAR_WEBHOOK_SECRET;
+  if (!secret) {
     return NextResponse.json(
-      { error: 'webhook is not configured (POLAR_WEBHOOK_SECRET missing)' },
+      { error: 'POLAR_WEBHOOK_SECRET not configured' },
       { status: 503 },
     );
   }
 
-  let event: PolarEvent;
-  try {
-    event = (await req.json()) as PolarEvent;
-  } catch {
-    return NextResponse.json({ error: 'invalid json' }, { status: 400 });
+  // Read raw body BEFORE parsing JSON — we need it for signature verification.
+  const rawBody = await req.text();
+
+  const headers = readWebhookHeaders(req);
+  if (!headers) {
+    return NextResponse.json(
+      { error: 'missing webhook-id / webhook-timestamp / webhook-signature headers' },
+      { status: 400 },
+    );
   }
 
-  if (event.type !== 'order.created') {
+  const verify = await verifyStandardWebhook(secret, headers, rawBody);
+  if (!verify.ok) {
+    return NextResponse.json({ error: `signature: ${verify.reason}` }, { status: 401 });
+  }
+
+  let event: PolarEvent;
+  try {
+    event = JSON.parse(rawBody) as PolarEvent;
+  } catch {
+    return NextResponse.json({ error: 'invalid json body' }, { status: 400 });
+  }
+
+  // Polar emits several event types; we mint licenses on confirmed paid orders.
+  const isOrderPaid =
+    event.type === 'order.created' ||
+    event.type === 'order.paid' ||
+    event.type === 'checkout.updated';
+  if (!isOrderPaid) {
     return NextResponse.json({ ok: true, ignored: event.type });
   }
 
-  const email = event.data?.customer?.email;
+  const email = event.data?.customer?.email ?? event.data?.customer_email;
   if (!email) {
     return NextResponse.json({ error: 'missing customer email' }, { status: 400 });
   }
@@ -70,11 +87,17 @@ export async function POST(req: Request) {
     );
   }
 
-  // TODO: send the email. For now, log + return so we have a record during
-  // testing. Email transport will be added when payments go live.
-  console.log('[polar webhook] would email', email, 'license:', jwt);
+  const tmpl = licenseDeliveryEmail(email, jwt);
+  const emailResult = await sendEmail({ to: email, subject: tmpl.subject, html: tmpl.html });
 
-  return NextResponse.json({ ok: true, license_issued: true });
+  // Always return 200 to Polar so it doesn't retry — license is already minted
+  // and persisted (server log). If email fails, surface it via support inbound.
+  return NextResponse.json({
+    ok: true,
+    license_issued: true,
+    email_sent: emailResult.sent,
+    email_reason: emailResult.sent ? undefined : emailResult.reason,
+  });
 }
 
 interface PolarEvent {
@@ -82,6 +105,7 @@ interface PolarEvent {
   data?: {
     id?: string;
     customer?: { email?: string; name?: string };
+    customer_email?: string;
     product?: { id?: string };
     amount?: number;
     currency?: string;

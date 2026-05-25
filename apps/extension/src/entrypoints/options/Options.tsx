@@ -11,6 +11,7 @@ import {
 import {
   ChromeBuiltinProvider,
   createAnthropicProvider,
+  createGeminiProvider,
   type AIProvider,
   type AISettings,
   type ProviderId,
@@ -50,12 +51,13 @@ const PROVIDERS_UI: ProviderUi[] = [
   },
   {
     id: 'gemini',
-    label: 'Google Gemini API (coming soon)',
-    description: 'BYOK with the Google Generative Language API. Implementation lands in Phase 1.',
+    label: 'Google Gemini (BYOK)',
+    description:
+      'Direct call to Google\'s API with your key. Generous free tier — a second truly free path next to Chrome built-in AI.',
     requiresApiKey: true,
     apiKeyUrl: 'https://aistudio.google.com/app/apikey',
     apiKeyPlaceholder: 'AI…',
-    buildProvider: () => null,
+    buildProvider: (s) => createGeminiProvider(() => s),
   },
   {
     id: 'openai',

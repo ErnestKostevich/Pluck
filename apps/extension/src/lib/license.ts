@@ -66,7 +66,18 @@ export async function verifyLicense(jwt: string): Promise<VerifyResult> {
         'License verification is disabled: a real public key has not been committed yet. Run `pnpm gen-license-keys` and commit the result.',
     };
   }
+  return verifyLicenseWithKey(jwt, LICENSE_PUBLIC_KEY);
+}
 
+/**
+ * Pure verification function — takes the public JWK as a parameter so it's
+ * easy to test with a generated keypair. The bundled `verifyLicense` wraps
+ * this with the committed public key + placeholder-mode safeguard.
+ */
+export async function verifyLicenseWithKey(
+  jwt: string,
+  publicKey: JsonWebKey,
+): Promise<VerifyResult> {
   const trimmed = jwt.trim();
   const parts = trimmed.split('.');
   if (parts.length !== 3) {
@@ -99,7 +110,7 @@ export async function verifyLicense(jwt: string): Promise<VerifyResult> {
   try {
     key = await crypto.subtle.importKey(
       'jwk',
-      LICENSE_PUBLIC_KEY,
+      publicKey,
       { name: 'ECDSA', namedCurve: 'P-256' },
       false,
       ['verify'],
@@ -107,7 +118,7 @@ export async function verifyLicense(jwt: string): Promise<VerifyResult> {
   } catch (err) {
     return {
       valid: false,
-      reason: `Bundled public key is invalid: ${err instanceof Error ? err.message : String(err)}`,
+      reason: `Public key is invalid: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 

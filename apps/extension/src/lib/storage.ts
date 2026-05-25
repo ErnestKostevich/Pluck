@@ -23,6 +23,15 @@ export interface SavedJob {
     periodMinutes: number;
     nextRunAt: number;
   };
+  /** Safety caps for paginated scrapes. */
+  paginationCap?: {
+    maxPages?: number;
+    maxRows?: number;
+  };
+  /** Outbound integrations fired after a successful run. */
+  integrations?: {
+    webhook?: WebhookConfig;
+  };
   /** Last run summary — denormalized for fast popup rendering. */
   lastRun?: {
     runId: string;
@@ -32,6 +41,18 @@ export interface SavedJob {
   };
   createdAt: number;
   updatedAt: number;
+}
+
+/**
+ * Per-job webhook configuration. Pro feature.
+ * Secret is generated once per job (random 32-byte base64) and used for HMAC-SHA256
+ * signing of the outbound POST body.
+ */
+export interface WebhookConfig {
+  enabled: boolean;
+  url: string;
+  /** Auto-generated secret. The user sees it in the edit form so they can configure their server. */
+  secret: string;
 }
 
 export interface RunRecord {
