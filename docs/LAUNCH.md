@@ -33,16 +33,21 @@ Rebuild the extension so it bundles the new public key:
 pnpm --filter @pluck/extension build
 ```
 
-## 2 · Set up Polar.sh
+## 2 · Set up NOWPayments
 
-1. Sign up at <https://polar.sh>
-2. Create a **product**: "Pluck Pro" — type `digital`, price `$29` one-time
-3. Copy the **checkout link** for the product
-4. In `apps/web/src/app/page.tsx` and `apps/web/src/app/pricing/page.tsx`, replace `https://buy.polar.sh/pluck-pro` with the real link
-5. In Polar dashboard → **Webhooks**, add an endpoint:
-   - URL: `https://your-domain.com/api/polar/webhook` (or vercel.app preview URL until the domain is set)
-   - Events: at least `order.created` and `order.paid`
-   - Copy the **webhook secret** (`whsec_...`)
+1. Sign up at <https://nowpayments.io>
+2. **API keys** tab → create an API key → copy it → set Vercel env:
+   `vercel env add NOWPAYMENTS_API_KEY production`
+3. **Store settings → IPN** → set IPN callback URL to:
+   `https://your-vercel-url.vercel.app/api/nowpayments/ipn`
+4. Same panel → generate an **IPN secret** → set Vercel env:
+   `vercel env add NOWPAYMENTS_IPN_SECRET production`
+5. (Optional) **Customize payout addresses** — add wallets for the cryptos you
+   want to actually receive funds in (NOWPayments auto-converts everything to
+   your preferred currency).
+
+After setting both env vars, redeploy. The `/checkout` and IPN endpoints
+will start working immediately.
 
 ## 3 · Set up Resend (license-delivery email)
 

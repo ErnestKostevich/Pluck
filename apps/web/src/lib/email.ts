@@ -73,14 +73,15 @@ export function licenseDeliveryEmail(email: string, license: string): { subject:
 <html>
 <body style="font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; line-height: 1.5; color: #0a0a0a; max-width: 600px; margin: 0 auto; padding: 24px;">
   <h1 style="font-size: 24px; font-weight: 600;">🍒 Welcome to Pluck Pro</h1>
-  <p>Thanks for buying Pluck Pro, ${escapeHtml(email)}. Your lifetime license is below — paste it into the extension's <strong>Settings → License</strong> panel to unlock unlimited saved jobs, scheduled runs, and integrations.</p>
+  <p>Thanks for buying Pluck Pro, ${escapeHtml(email)}. Your lifetime license is below — paste it into the extension's <strong>Settings → License</strong> panel to unlock unlimited saved jobs, scheduled runs, pagination, and integrations.</p>
   <pre style="background: #fafafa; border: 1px solid #e5e5e5; padding: 12px; border-radius: 8px; font-family: ui-monospace, monospace; font-size: 12px; overflow-wrap: break-word; word-break: break-all; white-space: pre-wrap;">${escapeHtml(license)}</pre>
-  <p>Two things worth knowing:</p>
+  <p>Three things worth knowing:</p>
   <ol>
-    <li>The license is verified <strong>offline</strong> by the extension — it never phones home. You can use Pluck without internet (as long as your AI provider works offline too).</li>
+    <li>The license is verified <strong>offline</strong> by the extension — it never phones home. Use Pluck without internet (as long as your AI provider works offline too).</li>
     <li>It's tied to your email, but works on every machine you sign in on. Lose access? Forward this email back to <a href="mailto:support@pluck.app">support@pluck.app</a> and we'll re-issue.</li>
+    <li>Future updates are free forever. Buy once, use forever — that's the deal.</li>
   </ol>
-  <p>14-day full refund, no questions. Just reply to this email.</p>
+  <p>14-day full refund: just reply to this email. After that the license is yours for life.</p>
   <p style="color: #737373; font-size: 12px; margin-top: 32px;">— Ernest, building Pluck solo</p>
 </body>
 </html>`,

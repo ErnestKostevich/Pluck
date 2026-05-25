@@ -67,14 +67,12 @@ export default function PricingPage() {
               { text: 'Priority email support' },
             ]}
             cta={
-              <a
-                href="https://buy.polar.sh/pluck-pro"
-                target="_blank"
-                rel="noreferrer"
+              <Link
+                href="/checkout"
                 className="block w-full rounded-md bg-white px-5 py-3 text-center text-sm font-semibold text-neutral-900 transition-all hover:bg-neutral-100"
               >
                 Buy Pro · $29
-              </a>
+              </Link>
             }
           />
         </AnimatedOnScroll>

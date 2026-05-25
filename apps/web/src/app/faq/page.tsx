@@ -111,7 +111,30 @@ const FAQS: { q: string; a: React.ReactNode }[] = [
         <a href="mailto:support@pluck.app" className="text-indigo-300 underline underline-offset-4 hover:text-indigo-200">
           support@pluck.app
         </a>{' '}
-        within 14 days. Full refund, no questions.
+        within 14 days. Full refund (in the crypto you paid in, at the original USD value), no questions.
+      </>
+    ),
+  },
+  {
+    q: 'Why crypto only? Can I pay with a card?',
+    a: (
+      <>
+        Pluck Pro is sold via{' '}
+        <a
+          href="https://nowpayments.io"
+          target="_blank"
+          rel="noreferrer"
+          className="text-indigo-300 underline underline-offset-4 hover:text-indigo-200"
+        >
+          NOWPayments
+        </a>
+        , which accepts BTC, ETH, USDT, USDC, and 150+ other cryptos. Picking a crypto checkout
+        means zero KYC overhead on our side, ~0.5% in fees instead of 5-10%, and a lifetime price
+        of $29 instead of $39+. If a card-checkout option is must-have for you, email{' '}
+        <a href="mailto:hi@pluck.app" className="text-indigo-300 underline underline-offset-4 hover:text-indigo-200">
+          hi@pluck.app
+        </a>
+        {' '}— if there&apos;s demand we&apos;ll add Lemon Squeezy as a second option.
       </>
     ),
   },
