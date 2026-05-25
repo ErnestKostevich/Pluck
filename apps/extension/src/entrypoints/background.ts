@@ -1,36 +1,27 @@
 import { defineBackground } from 'wxt/sandbox';
-import { API_BASE_URL } from '@/lib/config';
 import type { ContentToBgMessage, BgInferReply } from '@/lib/messages';
-import type { InferResponse } from '@pluck/shared';
+import { runInference } from '@/lib/ai';
 
 export default defineBackground(() => {
-  // Open the popup when the user clicks the extension icon (default behavior;
-  // explicit here in case we want to switch to opening a side panel later).
+  // The popup is wired via manifest; this hook is reserved for a future
+  // side-panel mode.
   chrome.action.onClicked?.addListener(() => {
-    // No-op: popup is configured via manifest. Hook reserved for future side-panel mode.
+    /* no-op */
   });
 
   chrome.runtime.onMessage.addListener(
     (msg: ContentToBgMessage, _sender, sendResponse: (reply: BgInferReply) => void) => {
       if (msg.type === 'infer') {
+        // Run client-side inference via the chosen AI provider.
+        // No server call — see docs/ARCHITECTURE.md for the zero-cost design.
         (async () => {
           try {
-            const res = await fetch(`${API_BASE_URL}/api/infer`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(msg.payload),
-            });
-            if (!res.ok) {
-              const text = await res.text().catch(() => '');
-              sendResponse({ ok: false, error: `HTTP ${res.status}: ${text || res.statusText}` });
-              return;
-            }
-            const data = (await res.json()) as InferResponse;
-            sendResponse({ ok: true, data });
+            const { response, providerUsed } = await runInference(msg.payload);
+            sendResponse({ ok: true, data: response, providerUsed });
           } catch (err) {
             sendResponse({
               ok: false,
-              error: err instanceof Error ? err.message : 'network error',
+              error: err instanceof Error ? err.message : 'inference failed',
             });
           }
         })();

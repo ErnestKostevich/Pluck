@@ -64,15 +64,45 @@ We are **not** targeting:
 
 ## Business model
 
-- **Freemium SaaS subscription**
-  - Free: 100 rows / month, manual runs only — for evaluation and personal use.
-  - Starter: $29 / mo — 10k rows, scheduled runs, Sheets export.
-  - Pro: $79 / mo — 100k rows, all integrations, scheduled runs, webhooks.
-  - Business: $199 / mo — 1M rows, team seats, priority proxies, API access.
-- **Usage-based add-on** for rows beyond plan caps.
-- **No free tier of scheduled / cloud runs** — that's where the cost is, and it's where the value is.
+**Zero-cost-to-founder, user-pays-own-usage.** The product is engineered so that operating costs scale to zero at idle and per-user variable costs are paid by the user, not us. This is a hard constraint — see [`memory/constraints.md`](../MEMORY.md).
 
-Target unit economics: gross margin ≥ 70% (Anthropic API + residential proxies + CAPTCHA solving are the main COGS).
+### How it works
+
+- **AI inference runs in the user's browser.** The extension calls the chosen LLM directly:
+  - **Chrome's built-in AI** (Gemini Nano via the Prompt API) — runs locally on the user's machine. No API key, no cost to anyone. Default for the free tier.
+  - **User's own API key** (BYOK) — Anthropic, Google Gemini, or OpenAI. Stored in `chrome.storage.local`, never transits our servers. The user's bill, not ours.
+- **Scheduling**: `chrome.alarms` — runs while the browser is open. No cloud worker, no hosting cost.
+- **Storage**: jobs, settings, results live in `chrome.storage.local`. Optional export to user's Google Sheets / webhook / CSV.
+- **License check** for paid features: a single Vercel function (free tier) that verifies a signed JWT issued at purchase. Offline-validatable; no DB required.
+
+### Pricing
+
+- **Free** — unlimited rows (cost paid by user via Chrome built-in or BYOK). 3 saved jobs max. Manual runs only. CSV export.
+- **Pro — $29 one-time** (lifetime license). Unlimited saved jobs, scheduled runs via browser alarms, Google Sheets + webhook export, multi-provider support, priority support.
+
+One-time over subscription because:
+
+- Friendlier CTA for the self-serve, no-touch sales motion we want.
+- No churn to fight.
+- Lower cognitive load for the "I'll just buy the tool" buyer.
+- Can layer a Business subscription on top later if usage patterns warrant it (e.g. team plans, cloud worker).
+
+### Founder costs at launch
+
+| Item                        | Cost                              |
+| --------------------------- | --------------------------------- |
+| Chrome Web Store dev fee    | $5 one-time                       |
+| Domain (optional)           | $10–15/year                       |
+| Hosting (Vercel free tier)  | $0                                |
+| Payment processor (Polar)   | $0 setup; ~5% per sale            |
+| AI / proxies / CAPTCHAs     | $0 (user pays via their own key)  |
+| **Fixed monthly burn**      | **$0**                            |
+
+### Trade-offs we accept
+
+1. **Less moat than a server-side SaaS** — the BYOK model is copyable. We win on UX and speed-to-market, not infra defensibility.
+2. **Scheduled runs need Chrome open** — fine for the operator persona who lives in the browser. Revisit when revenue funds a cloud worker.
+3. **BYOK friction** — mitigated by Chrome's built-in AI as the zero-friction free path. Anyone on Chrome ≥ 127 with the feature enabled can use Pluck without ever creating an API account.
 
 ## North-star metric
 

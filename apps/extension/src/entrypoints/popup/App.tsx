@@ -1,15 +1,25 @@
 import { useEffect, useState } from 'react';
 import type { PopupToContentMessage } from '@/lib/messages';
-import { API_BASE_URL } from '@/lib/config';
+import { getSettings } from '@/lib/settings';
+import type { ProviderId } from '@/lib/ai/types';
+
+const PROVIDER_LABELS: Record<ProviderId, string> = {
+  'chrome-builtin': 'Chrome built-in AI (free)',
+  anthropic: 'Anthropic Claude (your key)',
+  gemini: 'Google Gemini (your key)',
+  openai: 'OpenAI (your key)',
+};
 
 export function App() {
   const [tabUrl, setTabUrl] = useState<string>('');
+  const [provider, setProvider] = useState<ProviderId | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       setTabUrl(tabs[0]?.url ?? '');
     });
+    getSettings().then((s) => setProvider(s.provider));
   }, []);
 
   async function startPicker() {
@@ -63,8 +73,10 @@ export function App() {
           </span>
         </div>
         <div className="row">
-          <span>API:</span>
-          <code>{API_BASE_URL}</code>
+          <span>AI:</span>
+          <span className="tab-url">
+            {provider ? PROVIDER_LABELS[provider] : 'loading…'}
+          </span>
         </div>
       </footer>
     </main>

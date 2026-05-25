@@ -2,7 +2,13 @@
 
 > **AI-powered visual web scraper.** Click anything on any page, get structured data — no selectors, no code.
 
-Pluck is a Chrome extension + cloud platform that lets non-technical users extract structured data from any website by simply clicking on the data they want. An AI layer figures out the underlying pattern, handles pagination, and exports to Sheets, CSV, Webhooks, or your database.
+Pluck is a Chrome extension that lets non-technical users extract structured data from any website by clicking on the data they want. AI figures out the pattern, handles pagination, and exports to Sheets, CSV, or webhooks.
+
+## How it stays cheap
+
+Pluck runs **AI inference in the user's browser** — either via Chrome's built-in AI (Gemini Nano, free, no key) or the user's own API key (Anthropic / Gemini / OpenAI). Pluck never holds an LLM key on a server we pay for. There is no managed database; jobs and settings live in `chrome.storage`. Scheduled runs use `chrome.alarms` while the browser is open.
+
+This is a deliberate constraint — see [`docs/VISION.md`](docs/VISION.md) and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — so the founder's fixed monthly cost is **$0** and the product is bootstrappable without funding.
 
 ## Why Pluck?
 

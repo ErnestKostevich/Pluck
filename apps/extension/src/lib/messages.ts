@@ -4,6 +4,7 @@
  */
 
 import type { InferRequest, InferResponse } from '@pluck/shared';
+import type { ProviderId } from './ai/types';
 
 /** Sent from popup → content script (via chrome.tabs.sendMessage). */
 export type PopupToContentMessage = { type: 'start-picker' } | { type: 'stop-picker' };
@@ -15,5 +16,5 @@ export type ContentToBgMessage =
 
 /** Background → content script reply for `infer`. */
 export type BgInferReply =
-  | { ok: true; data: InferResponse }
+  | { ok: true; data: InferResponse; providerUsed: ProviderId }
   | { ok: false; error: string };

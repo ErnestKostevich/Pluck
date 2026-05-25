@@ -42,6 +42,8 @@ export default defineContentScript({
           }
           if (!reply.ok) reject(new Error(reply.error));
           else resolve(reply.data);
+          // providerUsed is in the reply too — the overlay can surface it via
+          // a separate channel later if we want to show "powered by X".
         });
       });
     }

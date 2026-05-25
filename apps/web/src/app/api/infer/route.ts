@@ -4,15 +4,16 @@ import { validateInferRequest, type InferResponse } from '@pluck/shared';
 export const runtime = 'nodejs';
 
 /**
- * POST /api/infer
+ * POST /api/infer — MARKETING-DEMO MOCK ONLY.
  *
- * Accepts the user's picks + page HTML, returns a proposed schema.
+ * The production extension does **not** call this endpoint. As of the
+ * 2026-05-25 architecture pivot to a zero-cost-to-founder model, AI inference
+ * runs entirely in the user's browser (Chrome built-in AI or the user's own
+ * API key). See `docs/ARCHITECTURE.md` and `memory/constraints.md`.
  *
- * This is the **mock** implementation — it does not actually call an LLM yet.
- * Phase 1 of the roadmap replaces this with a real Anthropic call.
- *
- * The mock still validates inputs and shapes its output identically to the
- * real implementation so the extension code is final from day one.
+ * This route stays around to power a "try without installing" demo button on
+ * the landing page. It returns mocked data (no real LLM call) so it costs $0
+ * to operate. Heavy rate-limiting goes here if the demo ever takes off.
  */
 export async function POST(req: Request) {
   let body: unknown;

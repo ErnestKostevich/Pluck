@@ -1,151 +1,182 @@
 # Architecture
 
+> **Hard constraint:** zero recurring cost to the founder. AI inference runs on the user's compute (Chrome built-in AI or user's own API key). Persistent state lives in `chrome.storage`. No managed database, no always-on workers. See [`memory/constraints.md`](../MEMORY.md).
+
 ## High-level
 
 ```
-┌─────────────────────────┐      ┌────────────────────────────┐
-│  Chrome Extension       │      │  Web App (Next.js)         │
-│  (apps/extension)       │      │  (apps/web)                │
-│                         │      │                            │
-│  - Element picker UI    │◄────►│  - Landing page            │
-│  - Selection capture    │ HTTPS│  - Auth (Clerk)            │
-│  - Auth token storage   │      │  - Dashboard               │
-│  - Triggers scrapes     │      │  - API routes              │
-└─────────────────────────┘      │    /api/infer              │
-                                 │    /api/jobs               │
-                                 │    /api/runs               │
-                                 │  - Stripe webhooks         │
-                                 └─────────────┬──────────────┘
-                                               │
-                                               ▼
-                                 ┌────────────────────────────┐
-                                 │  Postgres (Neon)           │
-                                 │  - users, jobs, runs,      │
-                                 │    rows, integrations      │
-                                 └────────────────────────────┘
-                                               │
-                                               ▼
-                                 ┌────────────────────────────┐
-                                 │  Worker (TBD)              │
-                                 │  - Playwright browser pool │
-                                 │  - Residential proxies     │
-                                 │  - CAPTCHA solver          │
-                                 │  - Pagination + retries    │
-                                 └────────────────────────────┘
+┌───────────────────────────────────────┐         ┌──────────────────────────┐
+│  Chrome Extension (the product)       │         │  Web App (marketing)     │
+│  apps/extension                       │         │  apps/web                │
+│                                       │         │                          │
+│  ┌─────────────────────────────────┐  │         │  - Landing page          │
+│  │  Element picker (content/)      │  │         │  - "Try without install" │
+│  │  Pattern inference (lib/ai/)    │  │         │    demo (mock /api/infer)│
+│  │  Saved jobs (chrome.storage)    │  │         │  - /api/license/verify   │
+│  │  Scheduled runs (chrome.alarms) │  │         │    (Vercel function,     │
+│  │  Settings/BYOK (chrome.storage) │  │         │     free tier)           │
+│  │  License check (offline JWT)    │  │         │                          │
+│  └─────────────────────────────────┘  │         └──────────────────────────┘
+│                  │                    │                       ▲
+│                  │ direct call        │                       │
+│                  ▼                    │                       │ purchase
+│  ┌─────────────────────────────────┐  │                       │ webhook
+│  │  AI Provider Adapters           │  │         ┌──────────────────────────┐
+│  │  - ChromeBuiltinAI (local)      │  │         │  Polar.sh                │
+│  │  - Anthropic (BYOK)             │  │         │  (payments, JWT issuer)  │
+│  │  - Gemini API (BYOK)            │  │         └──────────────────────────┘
+│  │  - OpenAI (BYOK, later)         │  │
+│  └─────────────────────────────────┘  │
+│                  │                    │
+│                  │ HTTPS (user's key) │
+│                  ▼                    │
+│         ┌────────────────────┐        │
+│         │ LLM provider API   │        │
+│         │ (user pays)        │        │
+│         └────────────────────┘        │
+└───────────────────────────────────────┘
 ```
+
+There is **no Pluck-operated server in the runtime path**. The web app only serves the landing page and a stateless license-verification endpoint. The extension can function entirely offline of our infrastructure.
 
 ## Components
 
-### `apps/extension` — Chrome Extension
+### `apps/extension` — Chrome Extension (the product)
 
-- **Framework:** [WXT](https://wxt.dev) + React + TypeScript + Tailwind.
-- **Entrypoints:**
-  - `popup` — main UI: list of jobs, "New scrape" button, status of recent runs.
-  - `content` — injected into pages. Renders the element-picker overlay, captures user clicks, snapshots relevant DOM.
-  - `background` — service worker. Holds session, proxies API calls, manages tab state.
+- **Framework:** [WXT](https://wxt.dev) + React + TypeScript.
 - **Manifest:** MV3.
-- **Permissions (minimal):** `activeTab`, `storage`, `scripting`, host permissions granted per-site at install or runtime.
+- **Permissions (minimal):** `activeTab`, `storage`, `alarms`, `scripting`; host permissions granted at runtime per-site.
 
-### `apps/web` — Web App
+**Entrypoints:**
+| File                            | Purpose                                                          |
+| ------------------------------- | ---------------------------------------------------------------- |
+| `entrypoints/popup/`            | Toolbar UI — start picker, manage jobs, open settings            |
+| `entrypoints/content.ts`        | Injected into pages; hosts the picker overlay                    |
+| `entrypoints/background.ts`     | Service worker — dispatch AI calls, run scheduled jobs           |
+| `entrypoints/options/` (todo)   | Settings page — choose AI provider, paste BYOK keys, license     |
+| `picker/overlay.ts`             | Shadow-DOM element picker                                        |
+| `lib/ai/`                       | AI provider abstraction + adapters (Chrome built-in, Anthropic…) |
+| `lib/settings.ts`               | Typed `chrome.storage.local` wrapper                             |
+| `lib/scheduling.ts` (todo)      | `chrome.alarms` wrapper for scheduled runs                       |
+| `lib/license.ts` (todo)         | Offline JWT validation for Pro features                          |
 
-- **Framework:** Next.js 15 (App Router) + React 19 + TypeScript + Tailwind CSS v4.
-- **Surfaces:**
-  - `/` — marketing landing page.
-  - `/dashboard` — authenticated app: jobs list, run history, integrations, billing.
-  - `/api/*` — REST endpoints called by both the extension and the dashboard.
-- **Auth:** Clerk (handles social/email/magic-link out of the box).
-- **Payments:** Stripe (subscriptions + metered billing for over-cap rows).
-- **DB client:** Drizzle ORM on Neon Postgres.
-- **AI:** Anthropic Claude API (`@anthropic-ai/sdk`) with prompt caching for repeated page templates.
+### `apps/web` — Marketing site + license endpoint
+
+- **Framework:** Next.js 15 (App Router) + Tailwind v4.
+- **What it serves:**
+  - `/` — landing page (positioning, demo video, pricing, link to Chrome Web Store).
+  - `/api/infer` — **demo-only mock** for the "try without installing" CTA on the landing page. Returns fake data, rate-limited. Never used by the production extension.
+  - `/api/license/verify` — stateless. Receives a JWT, verifies signature against a hardcoded public key, returns `{ valid, expires_at, plan }`. Free tier on Vercel handles 100k requests/mo.
+  - `/api/polar/webhook` (todo) — receives Polar purchase webhook, signs and emails the JWT license to the buyer.
+- **Deployment:** Vercel free tier. Domain optional (vercel.app subdomain works until we want branding).
+
+### AI provider adapter pattern
+
+All providers implement the same interface:
+
+```ts
+interface AIProvider {
+  readonly name: string;
+  /** Whether this provider is available in the current environment (e.g. Chrome built-in needs a recent Chrome). */
+  isAvailable(): Promise<boolean>;
+  /** Run pattern inference on a sanitized page + user picks. */
+  infer(req: InferRequest): Promise<InferResponse>;
+}
+```
+
+Adapters:
+
+- `ChromeBuiltinAI` — uses `window.ai` / Chrome Prompt API. Runs Gemini Nano locally. Free, no key, but smaller-model quality.
+- `Anthropic` — POST to `https://api.anthropic.com/v1/messages` with the user's BYOK key. Highest quality.
+- `Gemini` — POST to the Google Generative Language API with the user's BYOK key. Has a meaningful free tier on the user's side.
+- `OpenAI` — added in a later phase.
+
+`lib/ai/index.ts` picks the adapter based on user settings, with a fallback chain: chosen → first available.
 
 ### `packages/shared`
 
-Pure TypeScript types and small utilities used by both apps. No runtime dependencies. Compiled by each consumer.
+Pure TypeScript types for the `InferRequest`/`InferResponse` contract. Imported by both apps. No runtime deps.
 
-### Worker (future, not in MVP)
+## Data model
 
-Standalone Node service that runs scheduled scrape jobs. Will live in `apps/worker` when introduced. Options under consideration:
-
-- **Self-host on Fly.io** with Playwright + residential proxy provider (Bright Data, Smartproxy).
-- **Use Browserbase / Apify Actors** as the browser runtime and just wrap it.
-
-For MVP we'll run scrapes **on demand from the extension itself** (the user's own browser tab does the work) and only stand up the cloud worker when we ship scheduled runs in Phase 2.
-
-## Data model (initial)
-
-```
-users           id, clerk_id, email, plan, rows_used_this_period, created_at
-jobs            id, user_id, name, url, schema_json, schedule_cron, paused, created_at
-job_versions    id, job_id, selectors_json, pagination_json, created_at
-runs            id, job_id, status, started_at, finished_at, row_count, error
-rows            id, run_id, data_json, source_url, scraped_at
-integrations    id, user_id, type (sheets|webhook|airtable), config_json, secret_ref
-```
-
-Drizzle migrations live in `apps/web/drizzle/`.
-
-## The AI inference flow
-
-When the user picks elements on a page, the extension sends:
+**No relational database.** Everything that needs to persist lives in `chrome.storage.local`:
 
 ```ts
-POST /api/infer
-{
-  url: string,
-  pageHtml: string,        // trimmed / sanitized to fit token budget
-  picks: Array<{
-    domPath: string,        // e.g. "div.list > article:nth-child(3) > h2 > a"
-    sampleText: string,
-    sampleHtml: string,
-    label?: string,         // user-typed column name, optional
-  }>
-}
+type Settings = {
+  provider: 'chrome-builtin' | 'anthropic' | 'gemini' | 'openai';
+  apiKeys: {
+    anthropic?: string;
+    gemini?: string;
+    openai?: string;
+  };
+  license?: string; // signed JWT from Polar
+};
+
+type SavedJob = {
+  id: string;
+  name: string;
+  url: string;
+  schema: InferResponse;
+  schedule?: { cron: string; nextRunAt: number };
+  createdAt: number;
+};
+
+type RunRecord = {
+  id: string;
+  jobId: string;
+  startedAt: number;
+  finishedAt?: number;
+  status: 'running' | 'succeeded' | 'failed';
+  rowCount: number;
+  rows?: Record<string, string>[]; // last N runs only — cap storage
+  error?: string;
+};
 ```
 
-The server prompt is structured as:
+Storage caps: keep only the most recent 50 runs per job, capped at 10 MB total (chrome.storage.local quota is 10 MB by default).
 
-1. **System:** "You are a web-scraping assistant. Given a page and example elements the user clicked, infer the repeating-container pattern and column selectors."
-2. **User:** sanitized HTML + JSON of picks.
-3. **Assistant response (JSON):**
+## Scheduling
 
-```ts
-{
-  containerSelector: string,
-  columns: Array<{
-    label: string,
-    selector: string,      // relative to container
-    attribute?: "text" | "href" | "src" | string,
-    transform?: "trim" | "number" | "url" | "date",
-  }>,
-  paginationHint?: {
-    type: "next-link" | "infinite-scroll" | "page-numbers" | "none",
-    selector?: string,
-  },
-  confidence: number,
-  sampleRows: Array<Record<string, string>>,  // 3-5 example rows extracted using the proposed selectors
-}
+`chrome.alarms.create({ name: jobId, periodInMinutes: ... })` per scheduled job. The background script's `chrome.alarms.onAlarm` listener triggers the run.
+
+**Limitation:** alarms only fire while Chrome is open. We surface this in the UI ("Pluck runs jobs while Chrome is open. Keep a tab pinned to your dashboard, or upgrade to Business [coming later] for cloud scheduling.").
+
+A future Business tier introduces a real cloud worker. Out of scope for MVP — we do not write code or pay for it until revenue justifies it.
+
+## License flow
+
+```
+1. User clicks "Upgrade to Pro" in the extension
+   → opens Polar.sh checkout link with their email as metadata
+
+2. User pays $29 → Polar webhook fires
+   → POST /api/polar/webhook (apps/web)
+   → server signs JWT with our private key: { sub: email, plan: 'pro', exp: never }
+   → emails JWT to the user
+
+3. User pastes JWT into extension settings
+   → extension verifies signature with bundled public key (offline)
+   → unlocks Pro features
+
+4. No server check at runtime. Token revocation = ship an extension update with a blocklist of compromised tokens (rare).
 ```
 
-The extension validates the proposal by running the selectors locally and highlighting matches before the user confirms. This way the AI is a *suggester*, not a final authority — selector logic is grounded in the live DOM.
+This is intentionally low-friction DRM. Cracking it is trivial; we don't care at MVP — adoption beats locks.
 
-**Prompt caching** is essential: a single page template (e.g. an entire LinkedIn search-results page HTML) can be 50k+ tokens. We cache the page HTML so each refinement-iteration costs only the small delta.
+## Sanitization, prompt budget, rate limits
 
-## Deployment
+The inference flow lives entirely in the extension:
 
-| Component        | Where                                  |
-| ---------------- | -------------------------------------- |
-| Next.js web      | Vercel                                 |
-| Postgres         | Neon                                   |
-| Extension        | Chrome Web Store (eventually Edge/FF)  |
-| Auth             | Clerk                                  |
-| Payments         | Stripe                                 |
-| AI               | Anthropic API                          |
-| Error monitoring | Sentry                                 |
-| Product analytics| PostHog                                |
-| Worker (later)   | Fly.io or Railway, with Bright Data    |
+1. **Content script** picks → `sanitizePageHtml()` (strips scripts/styles/comments/event handlers) → clipped to 80k chars.
+2. **Background** receives picks + sanitized HTML → routes to the chosen `AIProvider`.
+3. **Adapter** builds the prompt (`lib/ai/prompt.ts`), calls the provider directly using the user's key, parses + validates the response.
+4. **Picker overlay** renders the proposed schema; user confirms/refines.
+
+Prompt caching for Anthropic: cache the page HTML so each refinement iteration is cheap (small delta). The user pays for the first request fully, then ~$0.001 per refinement.
 
 ## Open questions
 
-- **Anti-bot:** for protected sites (Cloudflare, DataDome), do we proxy through Browserbase/ScrapingBee or build the stack ourselves? Build is cheaper at scale, buy is faster to ship — start with buy.
-- **Pricing-page rows vs. records:** "row" is ambiguous — does a paginated scrape that returns 10k items count as 10k rows, or 1 row per page × 100 pages? Lean toward records = rows for simplicity.
-- **Extension distribution:** Chrome Web Store review can be slow and unpredictable; have a fallback "side-load from website" path documented for paying users.
+- **Chrome built-in AI availability**: as of mid-2026 the Prompt API requires Chrome ≥ 127 and either a flag or origin trial. Need to detect gracefully and fall back to BYOK with a clear UI.
+- **OAuth for Google Sheets export**: requires a verified OAuth client (free, but a one-time Google review). Defer until Phase 3.
+- **Polar vs Lemon Squeezy vs Gumroad**: leaning Polar for the API + DX; final pick when wiring up payments in Phase 3.
+- **Anti-bot**: out of scope until we have a cloud worker. For MVP, Pluck works on sites the user can already browse (no anti-bot delegation).

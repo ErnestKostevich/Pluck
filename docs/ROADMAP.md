@@ -1,99 +1,96 @@
 # Roadmap
 
-Phased build plan from empty repo to first paying customers. Dates are working estimates; the milestones matter more than the calendar.
+Phased build plan, re-sequenced 2026-05-25 for the zero-cost-to-founder model (see [`memory/constraints.md`](../MEMORY.md)). Milestones matter more than calendar dates.
 
-## Phase 0 — Foundation (week 1)
+## Phase 0 — Foundation ✅ (week 1)
 
-**Goal:** repo is buildable, both apps boot, scaffolding is in place.
+**Goal:** repo is buildable, both apps boot, scaffolding is in place. **Done 2026-05-25.**
 
 - [x] Monorepo (pnpm workspaces, shared tsconfig, prettier)
 - [x] Project docs (vision, architecture, roadmap)
-- [ ] `apps/extension` — WXT + React skeleton, popup + content script
-- [ ] `apps/web` — Next.js 15 skeleton, landing + dashboard placeholder, `/api/infer` route stub
-- [ ] `packages/shared` — type definitions for API contracts
-- [ ] End-to-end mock: extension picker → POST `/api/infer` (mocked response) → results rendered in popup
+- [x] `apps/extension` — WXT + React skeleton, popup + content script + background
+- [x] `apps/web` — Next.js 15 skeleton, landing + dashboard placeholder + `/api/infer` mock
+- [x] `packages/shared` — type definitions for API contracts
+- [x] End-to-end mock flow: picker → POST `/api/infer` (mocked) → results in overlay
 
-**Exit criteria:** I can install the unpacked extension, click a few elements on `example.com`, see mocked structured output in the popup, all locally without any external services.
+## Phase 1 — Client-side AI inference (weeks 2–3)
 
-## Phase 1 — Real AI inference (weeks 2–3)
+**Goal:** AI calls move from a server we'd pay for into the extension itself, using either Chrome built-in AI (free) or the user's own API key.
 
-**Goal:** replace the mock with a real Claude-powered pattern-inference loop.
+- [ ] `lib/ai/types.ts` — `AIProvider` interface
+- [ ] `lib/ai/prompt.ts` — prompt template + page-HTML sanitization tuned for token budget
+- [ ] `lib/ai/providers/chrome-builtin.ts` — Gemini Nano via `window.ai`, with availability detection
+- [ ] `lib/ai/providers/anthropic.ts` — direct call to `api.anthropic.com` with user's BYOK key + prompt caching
+- [ ] `lib/ai/providers/gemini.ts` — Google AI Studio API with user's BYOK key
+- [ ] `lib/settings.ts` — typed `chrome.storage.local` wrapper for provider choice + API keys
+- [ ] `entrypoints/options/` — settings page: pick provider, paste keys, test connection
+- [ ] Background routes inference through chosen provider (no more server fetch)
+- [ ] Repurpose `apps/web` `/api/infer` as marketing-demo mock (rate-limited)
+- [ ] Selector-validation in extension (highlight matches before user confirms)
+- [ ] "Refine pick" loop (add/remove examples, re-infer)
 
-- [ ] Anthropic SDK integration in `apps/web`
-- [ ] Real `/api/infer` implementation (with prompt caching)
-- [ ] Page-HTML sanitization (strip scripts, comments, irrelevant attrs to fit context budget)
-- [ ] Local selector-validation in extension (highlight matches before confirming)
-- [ ] "Refine pick" loop — user can add/remove example elements and the suggestion updates
+**Exit criteria:** on 5 real-world sites, the AI proposes a usable schema on the first or second iteration. Founder pays $0 in API costs because every call uses either the user's machine (Chrome built-in) or the user's key.
 
-**Exit criteria:** on 5 different real-world sites (e-commerce listing, directory, blog index, search-results page, job board) the AI proposes a usable schema on the first or second iteration.
+## Phase 2 — Save and re-run jobs (weeks 4–5)
 
-## Phase 2 — Save and re-run (weeks 4–5)
+**Goal:** jobs persist in browser storage; user can re-run on demand.
 
-**Goal:** scrape jobs persist; user can re-run them later.
+- [ ] `lib/storage.ts` — `chrome.storage.local` wrapper for `SavedJob` and `RunRecord`
+- [ ] `entrypoints/popup/` — jobs list, "New scrape", recent runs
+- [ ] "Save as job" flow from the picker overlay
+- [ ] "Re-run" flow — opens target URL in a background tab, executes saved schema, captures rows
+- [ ] Pagination: next-link follower + "load more" clicker
+- [ ] Per-job storage cap enforcement (last 50 runs, rolling)
+- [ ] CSV download from the popup
 
-- [ ] Clerk auth in `apps/web` + extension (token bridge)
-- [ ] Neon + Drizzle ORM setup, migrations for `users`, `jobs`, `runs`, `rows`
-- [ ] `POST /api/jobs` — save a job (URL + schema + pagination hint)
-- [ ] `POST /api/jobs/:id/run` — re-run on demand from the user's browser (extension performs the scrape locally)
-- [ ] Dashboard view: list of jobs, run history, view rows, download as CSV
-- [ ] Pagination handling (next-link follower, "load more" button clicker)
+**Exit criteria:** a user creates a job today, comes back tomorrow, hits "run", and gets a fresh CSV. All without leaving the browser. Still $0 founder cost.
 
-**Exit criteria:** a user can create a job today, come back tomorrow, hit "run", and get fresh data in CSV.
+## Phase 3 — Pro tier + monetization (weeks 6–8)
 
-## Phase 3 — Cloud scheduling (weeks 6–8)
+**Goal:** Pro features behind a $29 one-time license sold via Polar.sh. Free tier remains fully functional.
 
-**Goal:** jobs run automatically on a schedule, in the cloud, without the user's browser open.
+- [ ] Free-tier gating: max 3 saved jobs, manual runs only, CSV export only
+- [ ] `chrome.alarms`-based scheduled runs (Pro feature)
+- [ ] Google Sheets export (OAuth, append-on-run) — Pro feature
+- [ ] Webhook delivery with HMAC signing — Pro feature
+- [ ] Polar.sh checkout integration (link from popup → Polar hosted page)
+- [ ] `apps/web` `/api/polar/webhook` — receive purchase, sign JWT, email license to buyer
+- [ ] `apps/web` `/api/license/verify` — stateless JWT verification (Vercel free function)
+- [ ] `lib/license.ts` — offline JWT validation; unlock Pro features
+- [ ] License entry UI in settings page
+- [ ] Pricing page on the landing site
 
-- [ ] `apps/worker` — Node service with Playwright browser pool
-- [ ] Job queue (BullMQ on Redis, or Inngest)
-- [ ] Residential proxy integration (Bright Data or Smartproxy)
-- [ ] CAPTCHA solver integration (CapMonster, 2captcha) — only as fallback
-- [ ] Cron scheduling in dashboard
-- [ ] Notifications (email on job failure)
+**Exit criteria:** end-to-end flow works — user installs free extension, hits the 3-job cap, clicks "Upgrade", pays $29 on Polar, receives JWT by email, pastes into extension, Pro features unlock. $0 monthly cost still; Polar takes its cut per sale.
 
-**Exit criteria:** a job set to "every 6 hours" runs reliably for 7 days unattended across at least 10 different target sites.
-
-## Phase 4 — Integrations and billing (weeks 9–11)
-
-**Goal:** users can route output where they need it, and pay for the service.
-
-- [ ] Google Sheets export (OAuth, append-on-run)
-- [ ] Webhook delivery (POST rows to user-provided URL with HMAC signature)
-- [ ] Airtable integration
-- [ ] Stripe Checkout for subscription tiers
-- [ ] Metered usage tracking (rows scraped per period)
-- [ ] Free-tier gating (100 rows/mo, manual runs only)
-
-**Exit criteria:** a user can sign up, hit the free-tier limit, upgrade to paid via Stripe, and have rows automatically appended to their Google Sheet.
-
-## Phase 5 — Launch (week 12)
+## Phase 4 — Launch (week 9–10)
 
 **Goal:** first 100 paying customers.
 
-- [ ] Public landing page (clear positioning, demo video, pricing)
-- [ ] Chrome Web Store submission (allow 1–2 weeks for review)
+- [ ] Polish landing page (hero, demo video, pricing, FAQ, link to Chrome Web Store)
+- [ ] Chrome Web Store submission (1–2 weeks review; submit early)
 - [ ] Product Hunt launch
-- [ ] Cold outreach to 50 target users (recruiters, e-commerce operators)
-- [ ] 3 case-study posts on the blog
+- [ ] X / LinkedIn / Indie Hackers launch post
+- [ ] Outreach: 50 cold emails to recruiters, e-commerce operators
+- [ ] 3 case-study posts: "I built a list of 500 [X] with Pluck in 10 minutes"
 
-**Exit criteria:** $5k MRR.
+**Exit criteria:** $3k+ in cumulative one-time sales (≈100 Pro licenses).
 
-## Phase 6+ — Beyond MVP
+## Phase 5+ — After product-market fit
 
-Not commitments, just candidates ordered by gut-feel ROI:
+Not commitments. Ordered by gut-feel ROI. Only build when revenue justifies the time:
 
-- Team plans (seat-based pricing, shared jobs)
+- **Business tier ($99/year subscription)**: real cloud worker, scheduled runs without Chrome open, residential proxies, anti-bot handling. This is when we finally take on per-user variable costs — funded by the subscription, never by us at idle.
+- Team plans (seat-based, shared jobs)
 - Notion / HubSpot / Pipedrive integrations
 - API access (programmatic job creation)
-- Browser fingerprint rotation for harder sites
-- Public API to run a one-shot scrape from a curl request
-- Marketplace of pre-built job templates for popular sites
-- Firefox and Edge support
+- Firefox + Edge support
+- Public job-template marketplace
 - Self-serve enterprise tier (SSO, audit log, SLA)
 
 ## What we are explicitly NOT building
 
-- A general-purpose browser automation tool (Cursor / Replit / Bardeen own that)
+- A general-purpose browser-automation tool (Replit Agent / Bardeen own that)
 - A no-code workflow builder (Zapier owns that; we'll integrate with them instead)
 - A data marketplace (separate business model, separate problem)
-- An "AI agent" that does multi-step research — too broad, and we'd lose the wedge
+- A multi-step "AI agent" — too broad, loses the wedge
+- **Anything that requires us to pay for the user's usage before they pay us.**
