@@ -19,8 +19,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-white text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100">
+    <html lang="en" className="dark">
+      <body className="min-h-screen bg-[#050507] text-neutral-100 antialiased">
         <SiteHeader />
         {children}
         <SiteFooter />
@@ -31,32 +31,30 @@ export default function RootLayout({
 
 function SiteHeader() {
   return (
-    <header className="border-b border-neutral-200 dark:border-neutral-800">
-      <nav className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4 text-sm">
-        <Link href="/" className="font-bold tracking-tight">
-          🍒 Pluck
+    <header className="sticky top-0 z-50 border-b border-white/5 bg-[#050507]/70 backdrop-blur-xl">
+      <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4 text-sm">
+        <Link href="/" className="flex items-center gap-2 font-bold tracking-tight text-white">
+          <span className="inline-block">🍒</span>
+          <span>Pluck</span>
         </Link>
-        <div className="flex items-center gap-6 text-neutral-600 dark:text-neutral-400">
-          <Link
-            href="/pricing"
-            className="hover:text-neutral-900 dark:hover:text-neutral-100"
-          >
+        <div className="flex items-center gap-6 text-neutral-400">
+          <Link href="/pricing" className="transition-colors hover:text-white">
             Pricing
           </Link>
-          <Link href="/faq" className="hover:text-neutral-900 dark:hover:text-neutral-100">
+          <Link href="/faq" className="transition-colors hover:text-white">
             FAQ
           </Link>
           <a
             href="https://github.com/ErnestKostevich/Project-3"
             target="_blank"
             rel="noreferrer"
-            className="hover:text-neutral-900 dark:hover:text-neutral-100"
+            className="transition-colors hover:text-white"
           >
             GitHub
           </a>
           <a
             href="#install"
-            className="rounded-md bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-700"
+            className="rounded-md bg-white px-3 py-1.5 font-semibold text-neutral-900 transition-all hover:bg-neutral-100"
           >
             Install
           </a>
@@ -68,27 +66,27 @@ function SiteHeader() {
 
 function SiteFooter() {
   return (
-    <footer className="border-t border-neutral-200 py-8 text-sm text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-6">
-        <span>© {new Date().getFullYear()} Pluck</span>
+    <footer className="border-t border-white/5 py-10 text-sm text-neutral-500">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6">
+        <div className="flex items-center gap-2">
+          <span>🍒</span>
+          <span>© {new Date().getFullYear()} Pluck</span>
+        </div>
         <div className="flex items-center gap-5">
-          <Link
-            href="/pricing"
-            className="hover:text-neutral-900 dark:hover:text-neutral-100"
-          >
+          <Link href="/pricing" className="transition-colors hover:text-white">
             Pricing
           </Link>
-          <Link href="/faq" className="hover:text-neutral-900 dark:hover:text-neutral-100">
+          <Link href="/faq" className="transition-colors hover:text-white">
             FAQ
           </Link>
-          <Link href="/privacy" className="hover:text-neutral-900 dark:hover:text-neutral-100">
+          <Link href="/privacy" className="transition-colors hover:text-white">
             Privacy
           </Link>
           <a
             href="https://github.com/ErnestKostevich/Project-3"
             target="_blank"
             rel="noreferrer"
-            className="hover:text-neutral-900 dark:hover:text-neutral-100"
+            className="transition-colors hover:text-white"
           >
             GitHub
           </a>
