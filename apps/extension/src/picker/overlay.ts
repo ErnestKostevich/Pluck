@@ -1,25 +1,37 @@
 /**
  * Element-picker overlay.
  *
- * Renders inside a closed Shadow DOM rooted in a top-level <div> so the host
- * page's CSS cannot leak in (and our CSS does not leak out).
+ * Renders inside a closed Shadow DOM so host-page CSS can't leak in and our
+ * CSS can't leak out. Lifecycle:
  *
- * Lifecycle:
  *   mountPickerOverlay({...}) → installs DOM + listeners
- *   handle.destroy()          → removes everything cleanly
+ *   handle.destroy()          → tears everything down cleanly
  *
- * Visual states:
- *   1. Idle      — user hovers the page, highlight follows the cursor
- *   2. Selected  — user clicked an element; it stays outlined
- *   3. Inferring — toolbar shows a spinner while /api/infer runs
- *   4. Result    — toolbar swaps into a results panel
+ * Visual states (transitions in this order, but user can rewind via "Refine"):
+ *   1. picking      — user hovers to highlight, clicks to (de)select example
+ *      data. Toolbar shows the pick list.
+ *   2. inferring    — toolbar shows a spinner while the AI proposes a schema.
+ *   3. validating   — proposal in hand, we ran the selectors against the live
+ *      DOM. Toolbar shows: rows-found count, real extracted preview table,
+ *      action buttons: "Refine" / "Save as job" / "Cancel".
+ *   4. saving       — name + optional schedule input; submit → save-job message.
+ *
+ * The picker is vanilla DOM (no React) on purpose — it has to be small,
+ * standalone, and survive being injected into any page including ones with
+ * aggressive CSP. React would add bundle weight and ceremony for no win.
  */
 
 import type { ElementPick, InferResponse } from '@pluck/shared';
 import { computeDomPath, elementSampleHtml, elementSampleText } from '@/lib/dom-path';
+import { extractWithSchema } from '@/lib/selector-validation';
 
 export interface PickerOptions {
   onInfer: (picks: ElementPick[]) => Promise<InferResponse>;
+  onSaveJob: (
+    name: string,
+    url: string,
+    schema: InferResponse,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   onClose: () => void;
 }
 
@@ -28,9 +40,11 @@ export interface PickerHandle {
 }
 
 const HOST_ID = 'pluck-picker-host';
+const HIGHLIGHT_OUTLINE = '2px solid #6366f1';
+const SELECTED_OUTLINE = '2px solid #10b981';
+const MATCHED_OUTLINE = '2px dashed #10b981';
 
 export function mountPickerOverlay(opts: PickerOptions): PickerHandle {
-  // Defensive: if a previous instance is still around, tear it down first.
   document.getElementById(HOST_ID)?.remove();
 
   const host = document.createElement('div');
@@ -39,40 +53,20 @@ export function mountPickerOverlay(opts: PickerOptions): PickerHandle {
   document.documentElement.appendChild(host);
 
   const root = host.attachShadow({ mode: 'closed' });
-  root.innerHTML = STYLE + TOOLBAR_HTML;
-
+  root.innerHTML = STYLE + SHELL_HTML;
   const toolbar = root.querySelector<HTMLDivElement>('#toolbar')!;
-  const pickCountEl = root.querySelector<HTMLSpanElement>('#pick-count')!;
-  const pickListEl = root.querySelector<HTMLDivElement>('#pick-list')!;
-  const inferBtn = root.querySelector<HTMLButtonElement>('#infer-btn')!;
-  const cancelBtn = root.querySelector<HTMLButtonElement>('#cancel-btn')!;
-  const statusEl = root.querySelector<HTMLDivElement>('#status')!;
-  const resultEl = root.querySelector<HTMLDivElement>('#result')!;
 
+  // ── State ────────────────────────────────────────────────────────────────
+
+  type Mode = 'picking' | 'inferring' | 'validating' | 'saving';
+  let mode: Mode = 'picking';
   const picks: Array<ElementPick & { element: Element }> = [];
-  const HIGHLIGHT_OUTLINE = '2px solid #6366f1';
-  const SELECTED_OUTLINE = '2px solid #10b981';
   const prevOutlines = new WeakMap<Element, string>();
   let hovered: Element | null = null;
+  let lastProposal: InferResponse | null = null;
+  let matchedContainers: Element[] = [];
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-
-  function isOverlayElement(el: Element | null): boolean {
-    if (!el) return false;
-    if (el.id === HOST_ID) return true;
-    return host.contains(el);
-  }
-
-  function setHover(el: Element | null) {
-    if (hovered === el) return;
-    if (hovered && !isPicked(hovered)) restoreOutline(hovered);
-    hovered = el;
-    if (el && !isPicked(el)) {
-      saveOutline(el);
-      (el as HTMLElement).style.outline = HIGHLIGHT_OUTLINE;
-      (el as HTMLElement).style.outlineOffset = '-2px';
-    }
-  }
+  // ── Outline management ──────────────────────────────────────────────────
 
   function saveOutline(el: Element) {
     if (!prevOutlines.has(el)) {
@@ -88,59 +82,58 @@ export function mountPickerOverlay(opts: PickerOptions): PickerHandle {
     }
   }
 
+  function setOutline(el: Element, value: string) {
+    saveOutline(el);
+    (el as HTMLElement).style.outline = value;
+    (el as HTMLElement).style.outlineOffset = '-2px';
+  }
+
+  function isOverlayElement(el: Element | null): boolean {
+    return !!el && (el.id === HOST_ID || host.contains(el));
+  }
+
   function isPicked(el: Element): boolean {
     return picks.some((p) => p.element === el);
   }
 
-  function markSelected(el: Element) {
-    saveOutline(el);
-    (el as HTMLElement).style.outline = SELECTED_OUTLINE;
-    (el as HTMLElement).style.outlineOffset = '-2px';
+  function clearAllOutlines() {
+    if (hovered && !isPicked(hovered)) restoreOutline(hovered);
+    for (const p of picks) restoreOutline(p.element);
+    for (const c of matchedContainers) restoreOutline(c);
+    matchedContainers = [];
+    hovered = null;
   }
 
-  function renderPickList() {
-    pickCountEl.textContent = String(picks.length);
-    pickListEl.innerHTML = picks
-      .map(
-        (p, i) => `
-        <div class="pick-row">
-          <input data-i="${i}" class="label-input" placeholder="column_${i + 1}"
-                 value="${escapeAttr(p.label ?? '')}" />
-          <span class="pick-text" title="${escapeAttr(p.sampleText)}">${escapeHtml(
-            p.sampleText.slice(0, 40),
-          )}</span>
-          <button data-i="${i}" class="remove-btn" aria-label="Remove">✕</button>
-        </div>`,
-      )
-      .join('');
-    inferBtn.disabled = picks.length === 0;
-  }
-
-  // ── Event handlers ───────────────────────────────────────────────────────
+  // ── Hover + click handlers (picking mode only) ──────────────────────────
 
   function onMouseMove(e: MouseEvent) {
+    if (mode !== 'picking') return;
     const target = e.target as Element | null;
     if (isOverlayElement(target)) {
-      setHover(null);
+      if (hovered && !isPicked(hovered)) restoreOutline(hovered);
+      hovered = null;
       return;
     }
-    setHover(target);
+    if (target === hovered) return;
+    if (hovered && !isPicked(hovered)) restoreOutline(hovered);
+    hovered = target;
+    if (target && !isPicked(target)) setOutline(target, HIGHLIGHT_OUTLINE);
   }
 
   function onClickCapture(e: MouseEvent) {
+    if (mode !== 'picking') return;
     const target = e.target as Element | null;
-    if (isOverlayElement(target)) return; // let toolbar buttons work
+    if (isOverlayElement(target)) return;
     if (!target) return;
     e.preventDefault();
     e.stopPropagation();
 
     if (isPicked(target)) {
-      // Toggle off
       const idx = picks.findIndex((p) => p.element === target);
       picks.splice(idx, 1);
       restoreOutline(target);
     } else {
-      markSelected(target);
+      setOutline(target, SELECTED_OUTLINE);
       picks.push({
         element: target,
         domPath: computeDomPath(target),
@@ -148,7 +141,7 @@ export function mountPickerOverlay(opts: PickerOptions): PickerHandle {
         sampleHtml: elementSampleHtml(target),
       });
     }
-    renderPickList();
+    render();
   }
 
   function onKeyDown(e: KeyboardEvent) {
@@ -158,95 +151,291 @@ export function mountPickerOverlay(opts: PickerOptions): PickerHandle {
     }
   }
 
-  function onPickListClick(e: Event) {
-    const t = e.target as HTMLElement;
-    if (t.classList.contains('remove-btn')) {
-      const i = Number(t.dataset.i);
-      const removed = picks.splice(i, 1)[0];
-      if (removed) restoreOutline(removed.element);
-      renderPickList();
-    }
-  }
+  // ── Mode transitions ────────────────────────────────────────────────────
 
-  function onPickListInput(e: Event) {
-    const t = e.target as HTMLInputElement;
-    if (t.classList.contains('label-input')) {
-      const i = Number(t.dataset.i);
-      const pick = picks[i];
-      if (pick) pick.label = t.value;
-    }
-  }
-
-  async function runInfer() {
-    inferBtn.disabled = true;
-    cancelBtn.disabled = true;
-    statusEl.textContent = 'Inferring pattern…';
-    statusEl.classList.add('visible');
+  async function startInfer() {
+    if (picks.length === 0) return;
+    mode = 'inferring';
+    render();
     try {
       const payload: ElementPick[] = picks.map(({ element: _el, ...rest }) => rest);
-      const res = await opts.onInfer(payload);
-      renderResult(res);
+      const proposal = await opts.onInfer(payload);
+      lastProposal = proposal;
+      enterValidation();
     } catch (err) {
-      statusEl.textContent = `Error: ${err instanceof Error ? err.message : String(err)}`;
-      statusEl.classList.add('error');
-    } finally {
-      cancelBtn.disabled = false;
+      lastProposal = null;
+      mode = 'picking';
+      renderError(err instanceof Error ? err.message : String(err));
     }
   }
 
-  function renderResult(res: InferResponse) {
-    statusEl.classList.remove('visible');
-    toolbar.classList.add('with-result');
-    const cols = res.columns.map((c) => c.label);
-    resultEl.innerHTML = `
-      <div class="result-header">
-        <strong>Pattern inferred</strong>
-        <span class="confidence">confidence ${Math.round(res.confidence * 100)}%</span>
-      </div>
-      <div class="result-meta">
-        <code>${escapeHtml(res.containerSelector)}</code>
-      </div>
-      <table class="result-table">
-        <thead><tr>${cols.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>
-        <tbody>
-          ${res.sampleRows
-            .map(
-              (row) =>
-                `<tr>${cols
-                  .map((c) => `<td>${escapeHtml(String(row[c] ?? ''))}</td>`)
-                  .join('')}</tr>`,
-            )
-            .join('')}
-        </tbody>
-      </table>
-      <p class="result-note">This is a mocked response — Phase 1 of the roadmap replaces it with a real Claude call.</p>
-    `;
-    resultEl.classList.add('visible');
+  function enterValidation() {
+    if (!lastProposal) return;
+    mode = 'validating';
+
+    // Drop user-pick outlines; we now highlight matched containers instead.
+    for (const p of picks) restoreOutline(p.element);
+    for (const c of matchedContainers) restoreOutline(c);
+    matchedContainers = [];
+
+    const result = extractWithSchema(lastProposal);
+    for (const el of result.elements) setOutline(el, MATCHED_OUTLINE);
+    matchedContainers = result.elements;
+
+    render(result);
   }
+
+  function backToPicking() {
+    mode = 'picking';
+    // Restore pick outlines, drop matched-container highlights.
+    for (const c of matchedContainers) restoreOutline(c);
+    matchedContainers = [];
+    for (const p of picks) setOutline(p.element, SELECTED_OUTLINE);
+    render();
+  }
+
+  async function saveAsJob(name: string) {
+    if (!lastProposal) return;
+    mode = 'saving';
+    render();
+    const reply = await opts.onSaveJob(name, window.location.href, lastProposal);
+    if (reply.ok) {
+      renderSavedConfirmation(name);
+      setTimeout(() => {
+        teardown();
+        opts.onClose();
+      }, 1400);
+    } else {
+      mode = 'validating';
+      renderError(reply.error);
+    }
+  }
+
+  // ── Rendering ───────────────────────────────────────────────────────────
+
+  function render(validationResult?: ReturnType<typeof extractWithSchema>) {
+    switch (mode) {
+      case 'picking':
+        renderPicking();
+        break;
+      case 'inferring':
+        renderInferring();
+        break;
+      case 'validating':
+        renderValidating(validationResult ?? extractWithSchema(lastProposal!));
+        break;
+      case 'saving':
+        renderSaving();
+        break;
+    }
+  }
+
+  function renderPicking() {
+    toolbar.innerHTML = `
+      <header>
+        <span class="brand">🍒 Pluck</span>
+        <span class="hint">Click example data · <kbd>Esc</kbd> to cancel</span>
+      </header>
+      <div class="count-row">
+        <span><span id="pick-count">${picks.length}</span> picks</span>
+        <div class="actions">
+          <button id="cancel-btn" class="ghost">Cancel</button>
+          <button id="infer-btn" class="primary" ${picks.length === 0 ? 'disabled' : ''}>
+            Infer pattern
+          </button>
+        </div>
+      </div>
+      <div id="pick-list">
+        ${picks
+          .map(
+            (p, i) => `
+            <div class="pick-row">
+              <input data-i="${i}" class="label-input" placeholder="column_${i + 1}"
+                     value="${escapeAttr(p.label ?? '')}" />
+              <span class="pick-text" title="${escapeAttr(p.sampleText)}">${escapeHtml(
+                p.sampleText.slice(0, 40),
+              )}</span>
+              <button data-i="${i}" class="remove-btn" aria-label="Remove">✕</button>
+            </div>`,
+          )
+          .join('')}
+      </div>
+      <div id="status"></div>
+    `;
+    bindPickingHandlers();
+  }
+
+  function renderInferring() {
+    toolbar.innerHTML = `
+      <header>
+        <span class="brand">🍒 Pluck</span>
+      </header>
+      <div class="loading">
+        <div class="spinner"></div>
+        <div>
+          <strong>Inferring pattern…</strong>
+          <p>Sending your picks to the AI provider.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderValidating(result: ReturnType<typeof extractWithSchema>) {
+    if (!lastProposal) return;
+    const cols = lastProposal.columns.map((c) => c.label);
+    const sampleRows = result.rows.slice(0, 5);
+    const tableHtml = sampleRows.length
+      ? `<table class="result-table">
+           <thead><tr>${cols.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>
+           <tbody>
+             ${sampleRows
+               .map(
+                 (row) =>
+                   `<tr>${cols
+                     .map((c) => `<td>${escapeHtml((row[c] ?? '').slice(0, 80))}</td>`)
+                     .join('')}</tr>`,
+               )
+               .join('')}
+           </tbody>
+         </table>`
+      : `<div class="empty-result">No matches on this page. Try refining your picks.</div>`;
+
+    toolbar.innerHTML = `
+      <header>
+        <span class="brand">🍒 Pluck</span>
+        <span class="hint">${result.containerMatches} row${
+          result.containerMatches === 1 ? '' : 's'
+        } highlighted</span>
+      </header>
+      <div class="result-meta">
+        <code>${escapeHtml(lastProposal.containerSelector)}</code>
+        <span class="confidence">confidence ${Math.round(lastProposal.confidence * 100)}%</span>
+      </div>
+      ${tableHtml}
+      <div class="actions-row">
+        <button id="refine-btn" class="ghost">← Refine picks</button>
+        <button id="save-btn" class="primary" ${
+          result.containerMatches === 0 ? 'disabled' : ''
+        }>Save as job</button>
+      </div>
+      <div id="status"></div>
+    `;
+    bindValidationHandlers();
+  }
+
+  function renderSaving() {
+    const defaultName = document.title.slice(0, 60) || new URL(window.location.href).hostname;
+    toolbar.innerHTML = `
+      <header>
+        <span class="brand">🍒 Pluck</span>
+      </header>
+      <div class="save-form">
+        <label>
+          Job name
+          <input id="save-name" value="${escapeAttr(defaultName)}" />
+        </label>
+        <p class="callout">
+          The job is saved in your browser. Re-run it any time from the extension popup, or schedule
+          automatic runs from Settings (Pro feature).
+        </p>
+        <div class="actions-row">
+          <button id="save-back-btn" class="ghost">← Back</button>
+          <button id="save-confirm-btn" class="primary">Save</button>
+        </div>
+      </div>
+      <div id="status"></div>
+    `;
+    bindSavingHandlers();
+  }
+
+  function renderSavedConfirmation(name: string) {
+    toolbar.innerHTML = `
+      <header>
+        <span class="brand">🍒 Pluck</span>
+      </header>
+      <div class="loading" style="color: var(--success);">
+        <div style="font-size: 28px;">✓</div>
+        <div>
+          <strong>Saved.</strong>
+          <p>"${escapeHtml(name)}" is now in your popup. Closing in a moment…</p>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderError(message: string) {
+    // Append to whatever the current view rendered.
+    const statusEl = toolbar.querySelector<HTMLDivElement>('#status');
+    if (statusEl) {
+      statusEl.textContent = `Error: ${message}`;
+      statusEl.className = 'status error';
+    }
+  }
+
+  // ── Handler bindings ────────────────────────────────────────────────────
+
+  function bindPickingHandlers() {
+    toolbar.querySelector<HTMLButtonElement>('#cancel-btn')!.onclick = () => {
+      teardown();
+      opts.onClose();
+    };
+    toolbar.querySelector<HTMLButtonElement>('#infer-btn')!.onclick = () => startInfer();
+
+    toolbar.querySelectorAll<HTMLButtonElement>('.remove-btn').forEach((btn) => {
+      btn.onclick = () => {
+        const i = Number(btn.dataset.i);
+        const removed = picks.splice(i, 1)[0];
+        if (removed) restoreOutline(removed.element);
+        renderPicking();
+      };
+    });
+
+    toolbar.querySelectorAll<HTMLInputElement>('.label-input').forEach((inp) => {
+      inp.oninput = () => {
+        const i = Number(inp.dataset.i);
+        const pick = picks[i];
+        if (pick) pick.label = inp.value;
+      };
+    });
+  }
+
+  function bindValidationHandlers() {
+    toolbar.querySelector<HTMLButtonElement>('#refine-btn')!.onclick = () => backToPicking();
+    toolbar.querySelector<HTMLButtonElement>('#save-btn')!.onclick = () => {
+      mode = 'saving';
+      render();
+    };
+  }
+
+  function bindSavingHandlers() {
+    toolbar.querySelector<HTMLButtonElement>('#save-back-btn')!.onclick = () => {
+      mode = 'validating';
+      render();
+    };
+    toolbar.querySelector<HTMLButtonElement>('#save-confirm-btn')!.onclick = () => {
+      const name = toolbar.querySelector<HTMLInputElement>('#save-name')!.value.trim();
+      if (!name) return;
+      saveAsJob(name);
+    };
+  }
+
+  // ── Teardown ────────────────────────────────────────────────────────────
 
   function teardown() {
     document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('click', onClickCapture, true);
     document.removeEventListener('keydown', onKeyDown, true);
-    picks.forEach((p) => restoreOutline(p.element));
-    if (hovered && !isPicked(hovered)) restoreOutline(hovered);
+    clearAllOutlines();
     host.remove();
   }
 
-  // ── Wire up ──────────────────────────────────────────────────────────────
+  // ── Wire up ─────────────────────────────────────────────────────────────
 
   document.addEventListener('mousemove', onMouseMove, true);
   document.addEventListener('click', onClickCapture, true);
   document.addEventListener('keydown', onKeyDown, true);
-  pickListEl.addEventListener('click', onPickListClick);
-  pickListEl.addEventListener('input', onPickListInput);
-  inferBtn.addEventListener('click', runInfer);
-  cancelBtn.addEventListener('click', () => {
-    teardown();
-    opts.onClose();
-  });
 
-  renderPickList();
+  render();
 
   return {
     destroy() {
@@ -255,91 +444,152 @@ export function mountPickerOverlay(opts: PickerOptions): PickerHandle {
   };
 }
 
-// ── Static markup + styles (inlined into the shadow root) ──────────────────
+// ── Static markup + styles ─────────────────────────────────────────────────
 
-const TOOLBAR_HTML = /* html */ `
-  <div id="toolbar">
-    <header>
-      <span class="brand">🍒 Pluck</span>
-      <span class="hint">Click data on the page · <kbd>Esc</kbd> to cancel</span>
-    </header>
-    <div class="count-row">
-      <span><span id="pick-count">0</span> picks</span>
-      <div class="actions">
-        <button id="cancel-btn" class="ghost">Cancel</button>
-        <button id="infer-btn" class="primary" disabled>Infer pattern</button>
-      </div>
-    </div>
-    <div id="pick-list"></div>
-    <div id="status"></div>
-    <div id="result"></div>
-  </div>
-`;
+const SHELL_HTML = /* html */ `<div id="toolbar"></div>`;
 
 const STYLE = /* css */ `
 <style>
   :host, * { box-sizing: border-box; }
+  :host {
+    --bg: white;
+    --fg: #0a0a0a;
+    --fg-muted: #525252;
+    --fg-subtle: #737373;
+    --border: #e5e5e5;
+    --bg-elev: #fafafa;
+    --accent: #6366f1;
+    --accent-strong: #4f46e5;
+    --success: #10b981;
+    --danger: #ef4444;
+  }
+  @media (prefers-color-scheme: dark) {
+    :host {
+      --bg: #0a0a0a;
+      --fg: #fafafa;
+      --fg-muted: #d4d4d4;
+      --fg-subtle: #a3a3a3;
+      --border: #262626;
+      --bg-elev: #171717;
+    }
+  }
   #toolbar {
     position: fixed;
     top: 16px;
     right: 16px;
-    width: 360px;
+    width: 380px;
     max-height: calc(100vh - 32px);
     overflow: auto;
-    background: white;
-    color: #0a0a0a;
-    border: 1px solid #e5e5e5;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
     border-radius: 12px;
     box-shadow: 0 10px 40px rgba(0,0,0,0.18);
-    font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif;
     padding: 12px;
     pointer-events: auto;
   }
   header {
     display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
   }
   .brand { font-weight: 700; }
-  .hint { font-size: 11px; color: #737373; }
-  kbd { background: #f4f4f5; border: 1px solid #e4e4e7; border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; font: 11px ui-monospace, monospace; }
+  .hint { font-size: 11px; color: var(--fg-subtle); }
+  kbd {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 0 4px;
+    font: 11px ui-monospace, monospace;
+  }
   .count-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-  .actions { display: flex; gap: 6px; }
+  .actions, .actions-row { display: flex; gap: 6px; }
+  .actions-row { justify-content: space-between; margin-top: 10px; }
   button {
-    font: inherit; cursor: pointer; border-radius: 6px; padding: 6px 10px; border: 1px solid transparent;
+    font: inherit; cursor: pointer; border-radius: 6px; padding: 6px 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
   }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .primary { background: #6366f1; color: white; border-color: #4f46e5; }
-  .primary:hover:not(:disabled) { background: #4f46e5; }
-  .ghost { background: white; border-color: #e5e5e5; }
-  .ghost:hover { background: #f4f4f5; }
+  button:hover:not(:disabled) { background: var(--bg-elev); }
+  .primary {
+    background: var(--accent); color: white; border-color: var(--accent-strong);
+  }
+  .primary:hover:not(:disabled) { background: var(--accent-strong); }
+  .ghost { background: var(--bg); }
   #pick-list { display: flex; flex-direction: column; gap: 4px; }
-  .pick-row { display: grid; grid-template-columns: 110px 1fr auto; gap: 6px; align-items: center; padding: 4px; border: 1px solid #f4f4f5; border-radius: 6px; }
-  .label-input { border: 1px solid #e5e5e5; border-radius: 4px; padding: 3px 6px; font: inherit; }
-  .pick-text { color: #525252; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-  .remove-btn { background: transparent; border: none; color: #a3a3a3; padding: 2px 6px; }
-  .remove-btn:hover { color: #ef4444; }
-  #status { display: none; margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: #f4f4f5; color: #525252; font-size: 12px; }
-  #status.visible { display: block; }
-  #status.error { background: #fef2f2; color: #b91c1c; }
-  #result { display: none; margin-top: 12px; border-top: 1px solid #f4f4f5; padding-top: 12px; }
-  #result.visible { display: block; }
-  .result-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
-  .confidence { font-size: 11px; color: #737373; }
-  .result-meta { font-size: 11px; color: #737373; margin-bottom: 8px; }
-  .result-meta code { background: #f4f4f5; padding: 2px 4px; border-radius: 4px; }
-  .result-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  .result-table th, .result-table td { text-align: left; padding: 4px 6px; border: 1px solid #f4f4f5; }
-  .result-table th { background: #fafafa; }
-  .result-note { margin-top: 8px; font-size: 11px; color: #a3a3a3; }
-  @media (prefers-color-scheme: dark) {
-    #toolbar { background: #0a0a0a; color: #fafafa; border-color: #262626; }
-    .ghost { background: #0a0a0a; border-color: #262626; color: #fafafa; }
-    .ghost:hover { background: #171717; }
-    .label-input { background: #0a0a0a; border-color: #262626; color: #fafafa; }
-    #status { background: #171717; color: #d4d4d4; }
-    .result-meta code, kbd { background: #171717; color: #d4d4d4; border-color: #262626; }
-    .pick-row, .result-table th, .result-table td { border-color: #262626; }
-    .result-table th { background: #171717; }
+  .pick-row {
+    display: grid; grid-template-columns: 110px 1fr auto; gap: 6px; align-items: center;
+    padding: 4px; border: 1px solid var(--border); border-radius: 6px;
+  }
+  .label-input {
+    border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px;
+    font: inherit; font-size: 12px;
+    background: var(--bg); color: var(--fg);
+  }
+  .pick-text {
+    color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 12px;
+  }
+  .remove-btn {
+    background: transparent; border: none; color: var(--fg-subtle); padding: 2px 6px;
+  }
+  .remove-btn:hover { color: var(--danger); }
+  #status { display: none; margin-top: 8px; padding: 6px 8px; border-radius: 6px; font-size: 12px; }
+  #status.error {
+    display: block; background: rgba(239,68,68,0.1); color: var(--danger);
+    border: 1px solid rgba(239,68,68,0.3);
+  }
+  .loading {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 0;
+  }
+  .loading p { margin: 4px 0 0; font-size: 12px; color: var(--fg-muted); }
+  .spinner {
+    width: 28px; height: 28px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .result-meta {
+    display: flex; justify-content: space-between; gap: 8px;
+    font-size: 11px; color: var(--fg-subtle); margin-bottom: 8px;
+  }
+  .result-meta code {
+    background: var(--bg-elev); padding: 2px 6px; border-radius: 4px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 240px;
+  }
+  .result-table {
+    width: 100%; border-collapse: collapse; font-size: 12px;
+  }
+  .result-table th, .result-table td {
+    text-align: left; padding: 4px 6px; border: 1px solid var(--border);
+    max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .result-table th { background: var(--bg-elev); font-weight: 600; }
+  .empty-result {
+    padding: 12px; text-align: center; color: var(--fg-subtle); font-size: 12px;
+    background: var(--bg-elev); border-radius: 6px;
+  }
+  .save-form { display: flex; flex-direction: column; gap: 10px; }
+  .save-form label {
+    display: flex; flex-direction: column; gap: 4px;
+    font-size: 12px; color: var(--fg-muted);
+  }
+  .save-form input {
+    padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--fg); font: inherit; font-size: 13px;
+  }
+  .callout {
+    background: var(--bg-elev); border: 1px solid var(--border);
+    padding: 8px 10px; border-radius: 6px;
+    font-size: 11px; color: var(--fg-muted); margin: 0;
+    line-height: 1.5;
   }
 </style>
 `;

@@ -1,6 +1,10 @@
 import { defineContentScript } from 'wxt/sandbox';
-import type { PopupToContentMessage, ContentToBgMessage, BgInferReply } from '@/lib/messages';
-import { computeDomPath, elementSampleHtml, elementSampleText } from '@/lib/dom-path';
+import type {
+  PopupToContentMessage,
+  ContentToBgMessage,
+  BgInferReply,
+  BgSaveJobReply,
+} from '@/lib/messages';
 import { sanitizePageHtml } from '@/lib/sanitize-html';
 import type { ElementPick, InferResponse } from '@pluck/shared';
 import { mountPickerOverlay, type PickerHandle } from '@/picker/overlay';
@@ -16,6 +20,7 @@ export default defineContentScript({
         if (handle) return;
         handle = mountPickerOverlay({
           onInfer: handleInfer,
+          onSaveJob: handleSaveJob,
           onClose: () => {
             handle?.destroy();
             handle = null;
@@ -24,6 +29,9 @@ export default defineContentScript({
       } else if (msg.type === 'stop-picker') {
         handle?.destroy();
         handle = null;
+      } else if (msg.type === 'extract-with-schema') {
+        // Not used in the picker flow — present for future cross-context extraction.
+        // The runner uses chrome.scripting.executeScript instead.
       }
     });
 
@@ -42,16 +50,26 @@ export default defineContentScript({
           }
           if (!reply.ok) reject(new Error(reply.error));
           else resolve(reply.data);
-          // providerUsed is in the reply too — the overlay can surface it via
-          // a separate channel later if we want to show "powered by X".
         });
       });
     }
 
-    // Re-export DOM helpers for use inside the overlay module (they're already
-    // imported there, but also referenced here to keep the bundler happy).
-    void computeDomPath;
-    void elementSampleHtml;
-    void elementSampleText;
+    async function handleSaveJob(
+      name: string,
+      url: string,
+      schema: InferResponse,
+    ): Promise<{ ok: true } | { ok: false; error: string }> {
+      const message: ContentToBgMessage = { type: 'save-job', name, url, schema };
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage(message, (reply: BgSaveJobReply) => {
+          if (chrome.runtime.lastError) {
+            resolve({ ok: false, error: chrome.runtime.lastError.message ?? 'message failed' });
+            return;
+          }
+          if (reply.ok) resolve({ ok: true });
+          else resolve({ ok: false, error: reply.error });
+        });
+      });
+    }
   },
 });

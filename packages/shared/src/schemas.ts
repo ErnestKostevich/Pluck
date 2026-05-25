@@ -5,7 +5,7 @@
  * Swap for zod if/when the validation logic gets non-trivial.
  */
 
-import type { ElementPick, InferRequest, InferResponse, ColumnSpec } from './types.js';
+import type { ElementPick, InferRequest, InferResponse, ColumnSpec } from './types';
 
 export class ValidationError extends Error {
   constructor(

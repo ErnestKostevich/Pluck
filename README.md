@@ -16,9 +16,12 @@ The existing web-scraping market (Octoparse, ParseHub, Apify, Bright Data) was b
 
 ## Status
 
-🚧 **Pre-alpha.** Building the MVP. Not yet usable.
+🚧 **Pre-alpha, but end-to-end functional.** Pluck builds clean, all tests pass, and the full flow works locally: pick → infer → validate → save → re-run → export. The Chrome Web Store listing and the Polar.sh payment flow are next.
 
-See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the build plan and [`docs/VISION.md`](docs/VISION.md) for the long-form pitch.
+- 📖 [`docs/VISION.md`](docs/VISION.md) — pitch, target user, business model
+- 🏗️ [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system design, zero-cost rationale
+- 🗺️ [`docs/ROADMAP.md`](docs/ROADMAP.md) — phased build plan
+- 🧪 [`docs/TESTING.md`](docs/TESTING.md) — step-by-step manual test plan
 
 ## Repository layout
 
@@ -60,14 +63,16 @@ Open <http://localhost:3000>.
 
 ## Scripts
 
-| Script                  | What it does                            |
-| ----------------------- | --------------------------------------- |
-| `pnpm dev:extension`    | Run Chrome extension in dev mode (HMR)  |
-| `pnpm dev:web`          | Run Next.js dev server                  |
-| `pnpm build`            | Build all packages                      |
-| `pnpm typecheck`        | Type-check all packages                 |
-| `pnpm lint`             | Lint all packages                       |
-| `pnpm format`           | Format with Prettier                    |
+| Script                       | What it does                                                  |
+| ---------------------------- | ------------------------------------------------------------- |
+| `pnpm dev:extension`         | Run Chrome extension in dev mode (HMR)                        |
+| `pnpm dev:web`               | Run Next.js dev server                                        |
+| `pnpm -r build`              | Build all packages                                            |
+| `pnpm -r typecheck`          | Type-check all packages                                       |
+| `pnpm -r test`               | Run all unit tests (vitest)                                   |
+| `pnpm format`                | Format with Prettier                                          |
+| `pnpm gen-license-keys`      | Generate the ES256 keypair for Pluck Pro licenses (once)      |
+| `pnpm sign-test-license <e>` | Sign a test Pro license for the given email                   |
 
 ## Docs
 
