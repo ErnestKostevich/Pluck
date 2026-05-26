@@ -279,7 +279,7 @@ export function Options() {
         <p className="callout">
           Paste your Pluck Pro license JWT here to unlock scheduled runs, unlimited saved jobs, and
           export integrations. Don't have one yet?{' '}
-          <a href="https://pluck.app/pricing" target="_blank" rel="noreferrer">
+          <a href="https://pluck-eight.vercel.app/pricing" target="_blank" rel="noreferrer">
             Buy a lifetime license for $29 →
           </a>
         </p>

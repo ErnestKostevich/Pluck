@@ -108,8 +108,8 @@ const FAQS: { q: string; a: React.ReactNode }[] = [
     a: (
       <>
         Email{' '}
-        <a href="mailto:support@pluck.app" className="text-indigo-300 underline underline-offset-4 hover:text-indigo-200">
-          support@pluck.app
+        <a href="mailto:ernest2011kostevich@gmail.com" className="text-indigo-300 underline underline-offset-4 hover:text-indigo-200">
+          ernest2011kostevich@gmail.com
         </a>{' '}
         within 14 days. Full refund (in the crypto you paid in, at the original USD value), no questions.
       </>
@@ -131,8 +131,8 @@ const FAQS: { q: string; a: React.ReactNode }[] = [
         , which accepts BTC, ETH, USDT, USDC, and 150+ other cryptos. Picking a crypto checkout
         means zero KYC overhead on our side, ~0.5% in fees instead of 5-10%, and a lifetime price
         of $29 instead of $39+. If a card-checkout option is must-have for you, email{' '}
-        <a href="mailto:hi@pluck.app" className="text-indigo-300 underline underline-offset-4 hover:text-indigo-200">
-          hi@pluck.app
+        <a href="mailto:ernest2011kostevich@gmail.com" className="text-indigo-300 underline underline-offset-4 hover:text-indigo-200">
+          ernest2011kostevich@gmail.com
         </a>
         {' '}— if there&apos;s demand we&apos;ll add Lemon Squeezy as a second option.
       </>
@@ -154,10 +154,10 @@ export default function FaqPage() {
           <p className="mt-4 text-neutral-400">
             Don&apos;t see your question? Email{' '}
             <a
-              href="mailto:hi@pluck.app"
+              href="mailto:ernest2011kostevich@gmail.com"
               className="text-indigo-300 underline underline-offset-4 hover:text-indigo-200"
             >
-              hi@pluck.app
+              ernest2011kostevich@gmail.com
             </a>
             .
           </p>

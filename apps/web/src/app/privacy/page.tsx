@@ -150,8 +150,8 @@ export default function PrivacyPage() {
         </p>
         <p>
           To delete the email + license record on our side: email{' '}
-          <a href="mailto:privacy@pluck.app" className="underline underline-offset-4">
-            privacy@pluck.app
+          <a href="mailto:ernest2011kostevich@gmail.com" className="underline underline-offset-4">
+            ernest2011kostevich@gmail.com
           </a>{' '}
           from the address you bought with. We process within 30 days.
         </p>
@@ -161,8 +161,8 @@ export default function PrivacyPage() {
         </h2>
         <p>
           Questions, concerns, or data-deletion requests:{' '}
-          <a href="mailto:privacy@pluck.app" className="underline underline-offset-4">
-            privacy@pluck.app
+          <a href="mailto:ernest2011kostevich@gmail.com" className="underline underline-offset-4">
+            ernest2011kostevich@gmail.com
           </a>
           .
         </p>

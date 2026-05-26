@@ -116,11 +116,8 @@ function SiteFooter() {
             <FooterLink href="/privacy">Privacy</FooterLink>
           </FooterCol>
           <FooterCol title="Contact">
-            <FooterLink href="mailto:hi@pluck.app" external>
-              hi@pluck.app
-            </FooterLink>
-            <FooterLink href="mailto:support@pluck.app" external>
-              support@pluck.app
+            <FooterLink href="mailto:ernest2011kostevich@gmail.com" external>
+              ernest2011kostevich@gmail.com
             </FooterLink>
           </FooterCol>
         </div>

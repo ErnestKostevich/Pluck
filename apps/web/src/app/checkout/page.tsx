@@ -135,10 +135,10 @@ export default function CheckoutPage() {
           </Link>{' '}
           for alternatives, or email{' '}
           <a
-            href="mailto:hi@pluck.app"
+            href="mailto:ernest2011kostevich@gmail.com"
             className="text-neutral-300 underline underline-offset-4 hover:text-white"
           >
-            hi@pluck.app
+            ernest2011kostevich@gmail.com
           </a>
           .
         </p>

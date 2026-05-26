@@ -37,8 +37,8 @@ export function ThanksContent() {
       </p>
       <p className="mt-4 text-xs text-neutral-500">
         Didn&apos;t arrive within 15 minutes? Email{' '}
-        <a href="mailto:support@pluck.app" className="text-neutral-300 underline underline-offset-4 hover:text-white">
-          support@pluck.app
+        <a href="mailto:ernest2011kostevich@gmail.com" className="text-neutral-300 underline underline-offset-4 hover:text-white">
+          ernest2011kostevich@gmail.com
         </a>{' '}
         with your transaction ID — we&apos;ll reissue manually.
       </p>

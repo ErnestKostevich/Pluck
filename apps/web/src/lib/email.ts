@@ -12,7 +12,12 @@
  */
 
 const RESEND_API_URL = 'https://api.resend.com/emails';
-const DEFAULT_FROM = 'Pluck <licenses@pluck.app>';
+// Default sender: Resend's `onboarding@resend.dev` works without a verified
+// domain. Override with RESEND_FROM env var once a custom domain is verified
+// in Resend.
+const DEFAULT_FROM = 'Pluck <onboarding@resend.dev>';
+// Replies on the license email land in the founder's inbox.
+const DEFAULT_REPLY_TO = 'ernest2011kostevich@gmail.com';
 
 export interface SendArgs {
   to: string;
@@ -34,6 +39,7 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
   const body = {
     from: args.from ?? process.env.RESEND_FROM ?? DEFAULT_FROM,
     to: args.to,
+    reply_to: process.env.RESEND_REPLY_TO ?? DEFAULT_REPLY_TO,
     subject: args.subject,
     html: args.html,
   };
@@ -78,7 +84,7 @@ export function licenseDeliveryEmail(email: string, license: string): { subject:
   <p>Three things worth knowing:</p>
   <ol>
     <li>The license is verified <strong>offline</strong> by the extension — it never phones home. Use Pluck without internet (as long as your AI provider works offline too).</li>
-    <li>It's tied to your email, but works on every machine you sign in on. Lose access? Forward this email back to <a href="mailto:support@pluck.app">support@pluck.app</a> and we'll re-issue.</li>
+    <li>It's tied to your email, but works on every machine you sign in on. Lose access? Forward this email back to <a href="mailto:ernest2011kostevich@gmail.com">ernest2011kostevich@gmail.com</a> and we'll re-issue.</li>
     <li>Future updates are free forever. Buy once, use forever — that's the deal.</li>
   </ol>
   <p>14-day full refund: just reply to this email. After that the license is yours for life.</p>
