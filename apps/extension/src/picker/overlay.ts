@@ -49,7 +49,13 @@ export function mountPickerOverlay(opts: PickerOptions): PickerHandle {
 
   const host = document.createElement('div');
   host.id = HOST_ID;
-  host.style.cssText = 'all: initial; position: fixed; inset: 0; z-index: 2147483647;';
+  // CRITICAL: pointer-events: none on the host so mouse events PASS THROUGH
+  // to the page below. Without this, the host (full-viewport fixed div)
+  // intercepts every click and hover — the picker toolbar shows but the page
+  // appears to be "frozen". The toolbar itself is inside the shadow DOM
+  // with its own pointer-events: auto, so its buttons still work.
+  host.style.cssText =
+    'all: initial; position: fixed; inset: 0; z-index: 2147483647; pointer-events: none;';
   document.documentElement.appendChild(host);
 
   const root = host.attachShadow({ mode: 'closed' });
